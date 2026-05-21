@@ -1,6 +1,6 @@
 # HanAIndicator
 
-Version: `0.2.1`
+Version: `0.2.2`
 
 Small local macOS menu bar app that shows the current input source as a badge:
 
@@ -34,7 +34,7 @@ System Settings -> Privacy & Security -> Accessibility -> HanAIndicator
 The menu bar item is `한A`.
 
 - `Settings...`: opens the categorized settings window
-- `Version 0.2.1`: shows the current app version
+- `Version 0.2.2`: shows the current app version
 - `Open Accessibility Settings`: open the required macOS permission panel
 - `Quit HanAIndicator`: quit the app
 
@@ -50,7 +50,7 @@ The menu bar item is `한A`.
 
 ### Indicator
 
-- `Icon size`: changes the floating badge size from 22 px to 96 px.
+- `Icon size`: changes the floating badge size from 14 px to 72 px.
 - `Cursor position`: places the badge around the cursor using Bottom Right,
   Top Right, Bottom Left, Top Left, or Centered anchoring.
 - `Offset X/Y`: fine-tunes the badge distance from the cursor.

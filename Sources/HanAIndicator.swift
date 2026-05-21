@@ -4,12 +4,13 @@ import CoreGraphics
 import Foundation
 import UniformTypeIdentifiers
 
-private let appVersion = "0.2.1"
-private let defaultBadgeSize: CGFloat = 34
-private let badgeOuterPadding: CGFloat = 6
+private let appVersion = "0.2.2"
+private let defaultBadgeSize: CGFloat = 22
+private let badgeOuterPadding: CGFloat = 5
+private let badgeAspectRatio: CGFloat = 1.42
 private let idleDimDelay: TimeInterval = 1.0
-private let activeBadgeOpacity: CGFloat = 0.98
-private let idleBadgeOpacity: CGFloat = 0.48
+private let activeBadgeOpacity: CGFloat = 0.96
+private let idleBadgeOpacity: CGFloat = 0.42
 
 private enum SettingKey {
     static let keepVisible = "keepVisible"
@@ -75,18 +76,20 @@ private final class BadgeView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
-        let background = isKoreanInput
-            ? NSColor(calibratedRed: 0.03, green: 0.36, blue: 0.96, alpha: 0.94)
-            : NSColor(calibratedWhite: 0.08, alpha: 0.92)
+        let background = NSColor(calibratedWhite: 0.93, alpha: 0.94)
+        let textColor = isKoreanInput
+            ? NSColor(calibratedRed: 0.02, green: 0.25, blue: 0.82, alpha: 1.0)
+            : NSColor(calibratedWhite: 0.18, alpha: 1.0)
 
-        let side = min(badgeSize, bounds.width - badgeOuterPadding * 2, bounds.height - badgeOuterPadding * 2)
+        let height = min(badgeSize, bounds.height - badgeOuterPadding * 2)
+        let width = min(height * badgeAspectRatio, bounds.width - badgeOuterPadding * 2)
         let rect = NSRect(
-            x: (bounds.width - side) / 2,
-            y: (bounds.height - side) / 2,
-            width: side,
-            height: side
+            x: (bounds.width - width) / 2,
+            y: (bounds.height - height) / 2,
+            width: width,
+            height: height
         ).insetBy(dx: 1.5, dy: 1.5)
-        let radius = max(8, min(16, badgeSize * 0.28))
+        let radius = rect.height / 2
         let path = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
         if let image = badgeImage {
             NSGraphicsContext.saveGraphicsState()
@@ -101,23 +104,23 @@ private final class BadgeView: NSView {
             path.fill()
 
             let highlight = NSBezierPath(
-                roundedRect: rect.insetBy(dx: 1.6, dy: 1.6),
-                xRadius: max(6, radius - 2),
-                yRadius: max(6, radius - 2)
+                roundedRect: rect.insetBy(dx: 1.0, dy: 1.0),
+                xRadius: max(4, radius - 1),
+                yRadius: max(4, radius - 1)
             )
-            NSColor(calibratedWhite: 1.0, alpha: isKoreanInput ? 0.16 : 0.11).setStroke()
+            NSColor(calibratedWhite: 1.0, alpha: 0.72).setStroke()
             highlight.lineWidth = 1
             highlight.stroke()
         }
 
-        NSColor(calibratedWhite: 1.0, alpha: 0.34).setStroke()
+        NSColor(calibratedWhite: 0.0, alpha: 0.18).setStroke()
         path.lineWidth = 1
         path.stroke()
 
-        let fontSize = max(11, min(28, badgeSize * 0.45))
+        let fontSize = max(9, min(18, badgeSize * 0.50))
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: fontSize, weight: .semibold),
-            .foregroundColor: NSColor.white
+            .foregroundColor: textColor
         ]
         let size = label.size(withAttributes: attrs)
         let origin = NSPoint(
@@ -161,11 +164,12 @@ private final class BadgeWindow: NSPanel {
     }
 
     func applyBadgeSize(_ size: CGFloat) {
-        let width = max(22, min(96, size))
-        let windowSide = width + badgeOuterPadding * 2
+        let width = max(14, min(72, size))
+        let windowWidth = width * badgeAspectRatio + badgeOuterPadding * 2
+        let windowHeight = width + badgeOuterPadding * 2
         badgeView.badgeSize = width
-        badgeView.frame = NSRect(x: 0, y: 0, width: windowSide, height: windowSide)
-        setContentSize(NSSize(width: windowSide, height: windowSide))
+        badgeView.frame = NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight)
+        setContentSize(NSSize(width: windowWidth, height: windowHeight))
     }
 }
 
@@ -173,7 +177,7 @@ private final class SettingsWindowController: NSWindowController {
     private unowned let appDelegate: AppDelegate
     private let keepVisibleButton = NSButton(checkboxWithTitle: "Keep badge visible", target: nil, action: nil)
     private let preferCaretButton = NSButton(checkboxWithTitle: "Prefer text cursor position", target: nil, action: nil)
-    private let sizeSlider = NSSlider(value: Double(defaultBadgeSize), minValue: 22, maxValue: 96, target: nil, action: nil)
+    private let sizeSlider = NSSlider(value: Double(defaultBadgeSize), minValue: 14, maxValue: 72, target: nil, action: nil)
     private let sizeValueLabel = NSTextField(labelWithString: "\(Int(defaultBadgeSize)) px")
     private let koreanLabelField = NSTextField(string: "한")
     private let englishLabelField = NSTextField(string: "A")
@@ -561,6 +565,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         keepVisible = UserDefaults.standard.bool(forKey: SettingKey.keepVisible)
         preferCaret = UserDefaults.standard.bool(forKey: SettingKey.preferCaret)
         badgeSize = CGFloat(UserDefaults.standard.double(forKey: SettingKey.badgeSize))
+        if badgeSize > 72 {
+            badgeSize = defaultBadgeSize
+            UserDefaults.standard.set(Double(badgeSize), forKey: SettingKey.badgeSize)
+        }
         koreanLabel = UserDefaults.standard.string(forKey: SettingKey.koreanLabel) ?? "한"
         englishLabel = UserDefaults.standard.string(forKey: SettingKey.englishLabel) ?? "A"
         customImagePath = UserDefaults.standard.string(forKey: SettingKey.customImagePath) ?? ""
@@ -732,7 +740,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     fileprivate func setBadgeSize(_ value: CGFloat) {
-        badgeSize = max(22, min(96, value))
+        badgeSize = max(14, min(72, value))
         saveOptions()
         applyAppearanceOptions()
     }
