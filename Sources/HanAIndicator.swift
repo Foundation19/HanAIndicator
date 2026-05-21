@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 
 private let appVersion = "0.2.0"
 private let defaultBadgeSize: CGFloat = 34
+private let badgeOuterPadding: CGFloat = 6
 
 private enum SettingKey {
     static let keepVisible = "keepVisible"
@@ -54,7 +55,13 @@ private final class BadgeView: NSView {
             ? NSColor(calibratedRed: 0.06, green: 0.38, blue: 0.96, alpha: 0.92)
             : NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.14, alpha: 0.88)
 
-        let rect = bounds.insetBy(dx: 1.0, dy: 1.0)
+        let side = min(badgeSize, bounds.width - badgeOuterPadding * 2, bounds.height - badgeOuterPadding * 2)
+        let rect = NSRect(
+            x: (bounds.width - side) / 2,
+            y: (bounds.height - side) / 2,
+            width: side,
+            height: side
+        ).insetBy(dx: 1.5, dy: 1.5)
         let radius = max(6, min(14, badgeSize * 0.2))
         let path = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
         if let image = badgeImage {
@@ -81,19 +88,31 @@ private final class BadgeView: NSView {
         ]
         let size = label.size(withAttributes: attrs)
         let origin = NSPoint(
-            x: (bounds.width - size.width) / 2,
-            y: (bounds.height - size.height) / 2 - 0.5
+            x: rect.midX - size.width / 2,
+            y: rect.midY - size.height / 2 - 0.5
         )
         label.draw(at: origin, withAttributes: attrs)
     }
 }
 
 private final class BadgeWindow: NSPanel {
-    let badgeView = BadgeView(frame: NSRect(x: 0, y: 0, width: defaultBadgeSize, height: defaultBadgeSize * 0.82))
+    let badgeView = BadgeView(
+        frame: NSRect(
+            x: 0,
+            y: 0,
+            width: defaultBadgeSize + badgeOuterPadding * 2,
+            height: defaultBadgeSize + badgeOuterPadding * 2
+        )
+    )
 
     init() {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: defaultBadgeSize, height: defaultBadgeSize * 0.82),
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: defaultBadgeSize + badgeOuterPadding * 2,
+                height: defaultBadgeSize + badgeOuterPadding * 2
+            ),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -110,10 +129,10 @@ private final class BadgeWindow: NSPanel {
 
     func applyBadgeSize(_ size: CGFloat) {
         let width = max(22, min(96, size))
-        let height = width * 0.82
+        let windowSide = width + badgeOuterPadding * 2
         badgeView.badgeSize = width
-        badgeView.frame = NSRect(x: 0, y: 0, width: width, height: height)
-        setContentSize(NSSize(width: width, height: height))
+        badgeView.frame = NSRect(x: 0, y: 0, width: windowSide, height: windowSide)
+        setContentSize(NSSize(width: windowSide, height: windowSide))
     }
 }
 
