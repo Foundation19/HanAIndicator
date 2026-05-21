@@ -4,8 +4,8 @@ import CoreGraphics
 import Foundation
 import UniformTypeIdentifiers
 
-private let appVersion = "0.2.2"
-private let defaultBadgeSize: CGFloat = 22
+private let appVersion = "0.2.3"
+private let defaultBadgeSize: CGFloat = 28
 private let badgeOuterPadding: CGFloat = 5
 private let badgeAspectRatio: CGFloat = 1.42
 private let idleDimDelay: TimeInterval = 1.0
@@ -76,6 +76,12 @@ private final class BadgeView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
+        guard let context = NSGraphicsContext.current else {
+            return
+        }
+        context.imageInterpolation = .high
+        context.shouldAntialias = true
+
         let background = NSColor(calibratedWhite: 0.93, alpha: 0.94)
         let textColor = isKoreanInput
             ? NSColor(calibratedRed: 0.02, green: 0.25, blue: 0.82, alpha: 1.0)
@@ -83,12 +89,13 @@ private final class BadgeView: NSView {
 
         let height = min(badgeSize, bounds.height - badgeOuterPadding * 2)
         let width = min(height * badgeAspectRatio, bounds.width - badgeOuterPadding * 2)
-        let rect = NSRect(
+        let rawRect = NSRect(
             x: (bounds.width - width) / 2,
             y: (bounds.height - height) / 2,
             width: width,
             height: height
-        ).insetBy(dx: 1.5, dy: 1.5)
+        ).insetBy(dx: 1.0, dy: 1.0)
+        let rect = pixelAligned(rawRect)
         let radius = rect.height / 2
         let path = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
         if let image = badgeImage {
@@ -104,30 +111,48 @@ private final class BadgeView: NSView {
             path.fill()
 
             let highlight = NSBezierPath(
-                roundedRect: rect.insetBy(dx: 1.0, dy: 1.0),
+                roundedRect: pixelAligned(rect.insetBy(dx: 1.0, dy: 1.0)),
                 xRadius: max(4, radius - 1),
                 yRadius: max(4, radius - 1)
             )
-            NSColor(calibratedWhite: 1.0, alpha: 0.72).setStroke()
+            NSColor(calibratedWhite: 1.0, alpha: 0.78).setStroke()
             highlight.lineWidth = 1
             highlight.stroke()
         }
 
-        NSColor(calibratedWhite: 0.0, alpha: 0.18).setStroke()
+        NSColor(calibratedWhite: 0.0, alpha: 0.24).setStroke()
         path.lineWidth = 1
         path.stroke()
 
-        let fontSize = max(9, min(18, badgeSize * 0.50))
+        let fontSize = max(11, min(20, badgeSize * 0.49))
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: fontSize, weight: .semibold),
+            .font: NSFont.systemFont(ofSize: fontSize, weight: .bold),
             .foregroundColor: textColor
         ]
         let size = label.size(withAttributes: attrs)
-        let origin = NSPoint(
+        let origin = pixelAligned(NSPoint(
             x: rect.midX - size.width / 2,
-            y: rect.midY - size.height / 2 - 0.5
-        )
+            y: rect.midY - size.height / 2
+        ))
         label.draw(at: origin, withAttributes: attrs)
+    }
+
+    private func pixelAligned(_ rect: NSRect) -> NSRect {
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        return NSRect(
+            x: (rect.origin.x * scale).rounded() / scale,
+            y: (rect.origin.y * scale).rounded() / scale,
+            width: (rect.size.width * scale).rounded() / scale,
+            height: (rect.size.height * scale).rounded() / scale
+        )
+    }
+
+    private func pixelAligned(_ point: NSPoint) -> NSPoint {
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        return NSPoint(
+            x: (point.x * scale).rounded() / scale,
+            y: (point.y * scale).rounded() / scale
+        )
     }
 }
 
@@ -565,7 +590,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         keepVisible = UserDefaults.standard.bool(forKey: SettingKey.keepVisible)
         preferCaret = UserDefaults.standard.bool(forKey: SettingKey.preferCaret)
         badgeSize = CGFloat(UserDefaults.standard.double(forKey: SettingKey.badgeSize))
-        if badgeSize > 72 {
+        if badgeSize < 24 || badgeSize > 72 {
             badgeSize = defaultBadgeSize
             UserDefaults.standard.set(Double(badgeSize), forKey: SettingKey.badgeSize)
         }

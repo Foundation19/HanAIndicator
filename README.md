@@ -1,6 +1,6 @@
 # HanAIndicator
 
-Version: `0.2.2`
+Version: `0.2.3`
 
 Small local macOS menu bar app that shows the current input source as a badge:
 
@@ -34,7 +34,7 @@ System Settings -> Privacy & Security -> Accessibility -> HanAIndicator
 The menu bar item is `한A`.
 
 - `Settings...`: opens the categorized settings window
-- `Version 0.2.2`: shows the current app version
+- `Version 0.2.3`: shows the current app version
 - `Open Accessibility Settings`: open the required macOS permission panel
 - `Quit HanAIndicator`: quit the app
 
