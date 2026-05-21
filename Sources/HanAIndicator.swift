@@ -480,6 +480,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cachedLabel = "A"
     private var cachedIsKorean = false
     private var cachedSourceID = ""
+    private var lastCaretPoint: CGPoint?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -611,8 +612,15 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let point = preferCaret ? caretPoint() ?? mousePoint() : mousePoint()
-        moveBadge(near: point)
+        if preferCaret {
+            guard let point = caretPoint() ?? lastCaretPoint else {
+                window.orderOut(nil)
+                return
+            }
+            moveBadge(near: point)
+        } else {
+            moveBadge(near: mousePoint())
+        }
         if !window.isVisible {
             window.orderFrontRegardless()
         }
@@ -708,8 +716,13 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         self.offsetX = max(-200, min(200, offsetX))
         self.offsetY = max(-200, min(200, offsetY))
         saveOptions()
-        let point = preferCaret ? caretPoint() ?? mousePoint() : mousePoint()
-        moveBadge(near: point)
+        if preferCaret {
+            if let point = caretPoint() ?? lastCaretPoint {
+                moveBadge(near: point)
+            }
+        } else {
+            moveBadge(near: mousePoint())
+        }
     }
 
     fileprivate func resetOptions() {
@@ -793,6 +806,13 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             return nil
         }
 
+        let systemWide = AXUIElementCreateSystemWide()
+        if let focusedElement = axElement(systemWide, kAXFocusedUIElementAttribute),
+           let point = caretPoint(in: focusedElement) {
+            lastCaretPoint = point
+            return point
+        }
+
         guard let app = NSWorkspace.shared.frontmostApplication else {
             return nil
         }
@@ -808,6 +828,15 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let focusedElement = focusedValue as! AXUIElement
+        if let point = caretPoint(in: focusedElement) {
+            lastCaretPoint = point
+            return point
+        }
+
+        return nil
+    }
+
+    private func caretPoint(in focusedElement: AXUIElement) -> CGPoint? {
         if let textElement = bestTextElement(from: focusedElement),
            let rect = selectedTextRect(textElement) {
             return CGPoint(x: rect.midX, y: rect.midY)
@@ -927,6 +956,31 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             return nil
         }
 
+        if let rect = boundsForRange(axRange, originalRange: range, element: element) {
+            return rect
+        }
+
+        if range.length == 0 {
+            if let nextRange = makeAXRange(location: range.location, length: 1),
+               let rect = boundsForRange(nextRange, originalRange: CFRange(location: range.location, length: 1), element: element) {
+                return CGRect(x: rect.minX, y: rect.minY, width: 1, height: rect.height)
+            }
+            if range.location > 0,
+               let previousRange = makeAXRange(location: range.location - 1, length: 1),
+               let rect = boundsForRange(previousRange, originalRange: CFRange(location: range.location - 1, length: 1), element: element) {
+                return CGRect(x: rect.maxX, y: rect.minY, width: 1, height: rect.height)
+            }
+        }
+
+        return nil
+    }
+
+    private func makeAXRange(location: Int, length: Int) -> AXValue? {
+        var range = CFRange(location: location, length: length)
+        return AXValueCreate(.cfRange, &range)
+    }
+
+    private func boundsForRange(_ axRange: AXValue, originalRange range: CFRange, element: AXUIElement) -> CGRect? {
         var parameter: CFTypeRef?
         let result = AXUIElementCopyParameterizedAttributeValue(
             element,
