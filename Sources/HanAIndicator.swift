@@ -15,6 +15,27 @@ private enum SettingKey {
     static let koreanLabel = "koreanLabel"
     static let englishLabel = "englishLabel"
     static let customImagePath = "customImagePath"
+    static let anchor = "anchor"
+    static let offsetX = "offsetX"
+    static let offsetY = "offsetY"
+}
+
+private enum BadgeAnchor: String, CaseIterable {
+    case bottomRight
+    case topRight
+    case bottomLeft
+    case topLeft
+    case centered
+
+    var title: String {
+        switch self {
+        case .bottomRight: return "Bottom Right"
+        case .topRight: return "Top Right"
+        case .bottomLeft: return "Bottom Left"
+        case .topLeft: return "Top Left"
+        case .centered: return "Centered"
+        }
+    }
 }
 
 private final class BadgeView: NSView {
@@ -145,6 +166,9 @@ private final class SettingsWindowController: NSWindowController {
     private let koreanLabelField = NSTextField(string: "한")
     private let englishLabelField = NSTextField(string: "A")
     private let imagePathLabel = NSTextField(labelWithString: "No custom image selected")
+    private let anchorPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let offsetXField = NSTextField(string: "18")
+    private let offsetYField = NSTextField(string: "-32")
 
     init(appDelegate: AppDelegate) {
         self.appDelegate = appDelegate
@@ -174,6 +198,9 @@ private final class SettingsWindowController: NSWindowController {
         imagePathLabel.stringValue = appDelegate.customImagePath.isEmpty
             ? "No custom image selected"
             : appDelegate.customImagePath
+        anchorPopup.selectItem(withTitle: appDelegate.anchor.title)
+        offsetXField.stringValue = "\(Int(appDelegate.offsetX))"
+        offsetYField.stringValue = "\(Int(appDelegate.offsetY))"
     }
 
     private func buildContent() {
@@ -261,23 +288,48 @@ private final class SettingsWindowController: NSWindowController {
         englishLabelField.action = #selector(labelChanged)
         view.addSubview(englishLabelField)
 
+        let anchorTitle = NSTextField(labelWithString: "Cursor position")
+        anchorTitle.frame = NSRect(x: 26, y: 148, width: 120, height: 22)
+        view.addSubview(anchorTitle)
+
+        anchorPopup.addItems(withTitles: BadgeAnchor.allCases.map(\.title))
+        anchorPopup.frame = NSRect(x: 146, y: 144, width: 150, height: 28)
+        anchorPopup.target = self
+        anchorPopup.action = #selector(positionChanged)
+        view.addSubview(anchorPopup)
+
+        let offsetTitle = NSTextField(labelWithString: "Offset X/Y")
+        offsetTitle.frame = NSRect(x: 316, y: 148, width: 78, height: 22)
+        view.addSubview(offsetTitle)
+
+        offsetXField.frame = NSRect(x: 394, y: 144, width: 42, height: 26)
+        offsetXField.target = self
+        offsetXField.action = #selector(positionChanged)
+        view.addSubview(offsetXField)
+
+        offsetYField.frame = NSRect(x: 442, y: 144, width: 42, height: 26)
+        offsetYField.target = self
+        offsetYField.action = #selector(positionChanged)
+        view.addSubview(offsetYField)
+
         let chooseButton = NSButton(title: "Choose Image...", target: self, action: #selector(chooseImage))
-        chooseButton.frame = NSRect(x: 26, y: 136, width: 140, height: 32)
+        chooseButton.frame = NSRect(x: 26, y: 96, width: 140, height: 32)
         view.addSubview(chooseButton)
 
         let clearButton = NSButton(title: "Clear Image", target: self, action: #selector(clearImage))
-        clearButton.frame = NSRect(x: 178, y: 136, width: 110, height: 32)
+        clearButton.frame = NSRect(x: 178, y: 96, width: 110, height: 32)
         view.addSubview(clearButton)
 
-        imagePathLabel.frame = NSRect(x: 26, y: 100, width: 455, height: 22)
+        imagePathLabel.frame = NSRect(x: 26, y: 66, width: 455, height: 22)
         imagePathLabel.lineBreakMode = .byTruncatingMiddle
         view.addSubview(imagePathLabel)
 
         view.addSubview(helpText(
-            "The selected image is used as the badge background. The current 한/A label remains on top so the language is still readable.",
+            "Cursor position sets where the badge sits around the cursor. X/Y offsets fine-tune the distance. The selected image is used as the badge background.",
             x: 26,
-            y: 50,
-            width: 440
+            y: 18,
+            width: 440,
+            height: 40
         ))
 
         return view
@@ -316,6 +368,7 @@ private final class SettingsWindowController: NSWindowController {
             - Keep Badge Visible: persistent Keyla-style badge.
             - Prefer Text Cursor Position: attach to the text caret when possible.
             - Icon Size: changes the floating badge size.
+            - Cursor Position and Offset X/Y: place the badge around the cursor.
             - Korean/English Label: custom text for each input source.
             - Choose Image: replace the badge background image.
             """,
@@ -360,6 +413,16 @@ private final class SettingsWindowController: NSWindowController {
         appDelegate.setLabels(
             korean: koreanLabelField.stringValue.isEmpty ? "한" : koreanLabelField.stringValue,
             english: englishLabelField.stringValue.isEmpty ? "A" : englishLabelField.stringValue
+        )
+    }
+
+    @objc private func positionChanged() {
+        let selectedTitle = anchorPopup.selectedItem?.title ?? BadgeAnchor.bottomRight.title
+        let anchor = BadgeAnchor.allCases.first(where: { $0.title == selectedTitle }) ?? .bottomRight
+        appDelegate.setPosition(
+            anchor: anchor,
+            offsetX: CGFloat(offsetXField.doubleValue),
+            offsetY: CGFloat(offsetYField.doubleValue)
         )
     }
 
@@ -408,6 +471,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     fileprivate var koreanLabel = "한"
     fileprivate var englishLabel = "A"
     fileprivate var customImagePath = ""
+    fileprivate var anchor: BadgeAnchor = .bottomRight
+    fileprivate var offsetX: CGFloat = 18
+    fileprivate var offsetY: CGFloat = -32
     private var lastLabel = ""
     private var lastInputSourceID = ""
     private var lastInputCheck = Date.distantPast
@@ -472,7 +538,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             SettingKey.badgeSize: Double(defaultBadgeSize),
             SettingKey.koreanLabel: "한",
             SettingKey.englishLabel: "A",
-            SettingKey.customImagePath: ""
+            SettingKey.customImagePath: "",
+            SettingKey.anchor: BadgeAnchor.bottomRight.rawValue,
+            SettingKey.offsetX: 18.0,
+            SettingKey.offsetY: -32.0
         ])
         keepVisible = UserDefaults.standard.bool(forKey: SettingKey.keepVisible)
         preferCaret = UserDefaults.standard.bool(forKey: SettingKey.preferCaret)
@@ -480,6 +549,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         koreanLabel = UserDefaults.standard.string(forKey: SettingKey.koreanLabel) ?? "한"
         englishLabel = UserDefaults.standard.string(forKey: SettingKey.englishLabel) ?? "A"
         customImagePath = UserDefaults.standard.string(forKey: SettingKey.customImagePath) ?? ""
+        let anchorRawValue = UserDefaults.standard.string(forKey: SettingKey.anchor) ?? BadgeAnchor.bottomRight.rawValue
+        anchor = BadgeAnchor(rawValue: anchorRawValue) ?? .bottomRight
+        offsetX = CGFloat(UserDefaults.standard.double(forKey: SettingKey.offsetX))
+        offsetY = CGFloat(UserDefaults.standard.double(forKey: SettingKey.offsetY))
     }
 
     private func saveOptions() {
@@ -489,6 +562,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(koreanLabel, forKey: SettingKey.koreanLabel)
         UserDefaults.standard.set(englishLabel, forKey: SettingKey.englishLabel)
         UserDefaults.standard.set(customImagePath, forKey: SettingKey.customImagePath)
+        UserDefaults.standard.set(anchor.rawValue, forKey: SettingKey.anchor)
+        UserDefaults.standard.set(Double(offsetX), forKey: SettingKey.offsetX)
+        UserDefaults.standard.set(Double(offsetY), forKey: SettingKey.offsetY)
     }
 
     private func applyAppearanceOptions() {
@@ -627,6 +703,15 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         applyAppearanceOptions()
     }
 
+    fileprivate func setPosition(anchor: BadgeAnchor, offsetX: CGFloat, offsetY: CGFloat) {
+        self.anchor = anchor
+        self.offsetX = max(-200, min(200, offsetX))
+        self.offsetY = max(-200, min(200, offsetY))
+        saveOptions()
+        let point = preferCaret ? caretPoint() ?? mousePoint() : mousePoint()
+        moveBadge(near: point)
+    }
+
     fileprivate func resetOptions() {
         keepVisible = true
         preferCaret = true
@@ -634,6 +719,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         koreanLabel = "한"
         englishLabel = "A"
         customImagePath = ""
+        anchor = .bottomRight
+        offsetX = 18
+        offsetY = -32
         saveOptions()
         applyAppearanceOptions()
     }
@@ -697,7 +785,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func mousePoint() -> CGPoint {
         let location = NSEvent.mouseLocation
-        return CGPoint(x: location.x + 18, y: location.y - 32)
+        return location
     }
 
     private func caretPoint() -> CGPoint? {
@@ -725,11 +813,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if let rect = selectedTextRect(focusedElement) {
-            return CGPoint(x: rect.maxX + 8, y: rect.minY - 2)
+            return CGPoint(x: rect.midX, y: rect.midY)
         }
 
         if let rect = elementRect(focusedElement) {
-            return CGPoint(x: rect.minX + 8, y: rect.maxY - 34)
+            return CGPoint(x: rect.minX, y: rect.maxY)
         }
 
         return nil
@@ -840,7 +928,19 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
 
         let size = window.frame.size
-        var origin = CGPoint(x: point.x, y: point.y)
+        var origin: CGPoint
+        switch anchor {
+        case .bottomRight:
+            origin = CGPoint(x: point.x + offsetX, y: point.y + offsetY - size.height)
+        case .topRight:
+            origin = CGPoint(x: point.x + offsetX, y: point.y + offsetY)
+        case .bottomLeft:
+            origin = CGPoint(x: point.x + offsetX - size.width, y: point.y + offsetY - size.height)
+        case .topLeft:
+            origin = CGPoint(x: point.x + offsetX - size.width, y: point.y + offsetY)
+        case .centered:
+            origin = CGPoint(x: point.x + offsetX - size.width / 2, y: point.y + offsetY - size.height / 2)
+        }
         origin.x = max(screenFrame.minX + 6, min(origin.x, screenFrame.maxX - size.width - 6))
         origin.y = max(screenFrame.minY + 6, min(origin.y, screenFrame.maxY - size.height - 6))
         window.setFrameOrigin(origin)

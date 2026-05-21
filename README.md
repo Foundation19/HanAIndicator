@@ -51,6 +51,9 @@ The menu bar item is `한A`.
 ### Indicator
 
 - `Icon size`: changes the floating badge size from 22 px to 96 px.
+- `Cursor position`: places the badge around the cursor using Bottom Right,
+  Top Right, Bottom Left, Top Left, or Centered anchoring.
+- `Offset X/Y`: fine-tunes the badge distance from the cursor.
 - `Korean label`: label shown for Korean input sources, default `한`.
 - `English label`: label shown for English/ABC input sources, default `A`.
 - `Choose Image...`: replaces the badge background image. The label remains on
