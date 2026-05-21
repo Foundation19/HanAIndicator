@@ -613,11 +613,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if preferCaret {
-            guard let point = caretPoint() ?? lastCaretPoint else {
-                window.orderOut(nil)
-                return
-            }
-            moveBadge(near: point)
+            moveBadge(near: caretPoint() ?? lastCaretPoint ?? mousePoint())
         } else {
             moveBadge(near: mousePoint())
         }
