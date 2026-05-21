@@ -808,18 +808,57 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let focusedElement = focusedValue as! AXUIElement
-        guard isTextLike(focusedElement) else {
-            return nil
-        }
-
-        if let rect = selectedTextRect(focusedElement) {
+        if let textElement = bestTextElement(from: focusedElement),
+           let rect = selectedTextRect(textElement) {
             return CGPoint(x: rect.midX, y: rect.midY)
         }
 
-        if let rect = elementRect(focusedElement) {
+        if let textElement = bestTextElement(from: focusedElement),
+           let rect = elementRect(textElement) {
             return CGPoint(x: rect.minX, y: rect.maxY)
         }
 
+        return nil
+    }
+
+    private func bestTextElement(from element: AXUIElement) -> AXUIElement? {
+        if selectedTextRect(element) != nil {
+            return element
+        }
+        if isTextLike(element) {
+            return element
+        }
+        if let focusedChild = axElement(element, kAXFocusedUIElementAttribute),
+           let match = bestTextElement(from: focusedChild) {
+            return match
+        }
+        if let childMatch = firstTextElementInChildren(of: element, depth: 0) {
+            return childMatch
+        }
+        if let parent = axElement(element, kAXParentAttribute) {
+            if selectedTextRect(parent) != nil || isTextLike(parent) {
+                return parent
+            }
+            return firstTextElementInChildren(of: parent, depth: 0)
+        }
+        return nil
+    }
+
+    private func firstTextElementInChildren(of element: AXUIElement, depth: Int) -> AXUIElement? {
+        guard depth < 3 else {
+            return nil
+        }
+        guard let children = axElements(element, kAXChildrenAttribute) else {
+            return nil
+        }
+        for child in children {
+            if selectedTextRect(child) != nil || isTextLike(child) {
+                return child
+            }
+            if let match = firstTextElementInChildren(of: child, depth: depth + 1) {
+                return match
+            }
+        }
         return nil
     }
 
@@ -851,6 +890,24 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             return nil
         }
         return value as? String
+    }
+
+    private func axElement(_ element: AXUIElement, _ attribute: String) -> AXUIElement? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
+              value != nil else {
+            return nil
+        }
+        return (value as! AXUIElement)
+    }
+
+    private func axElements(_ element: AXUIElement, _ attribute: String) -> [AXUIElement]? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
+              let values = value as? [Any] else {
+            return nil
+        }
+        return values.compactMap { $0 as! AXUIElement? }
     }
 
     private func selectedTextRect(_ element: AXUIElement) -> CGRect? {
