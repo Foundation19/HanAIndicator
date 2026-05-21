@@ -4,7 +4,7 @@ import CoreGraphics
 import Foundation
 import UniformTypeIdentifiers
 
-private let appVersion = "0.2.3"
+private let appVersion = "0.2.4"
 private let defaultBadgeSize: CGFloat = 28
 private let badgeOuterPadding: CGFloat = 5
 private let badgeAspectRatio: CGFloat = 1.42
@@ -22,7 +22,16 @@ private enum SettingKey {
     static let anchor = "anchor"
     static let offsetX = "offsetX"
     static let offsetY = "offsetY"
+    static let koreanBackgroundColor = "koreanBackgroundColor"
+    static let koreanTextColor = "koreanTextColor"
+    static let englishBackgroundColor = "englishBackgroundColor"
+    static let englishTextColor = "englishTextColor"
 }
+
+private let defaultKoreanBackground = "#EEF3FF"
+private let defaultKoreanText = "#053FD1"
+private let defaultEnglishBackground = "#EEEEEE"
+private let defaultEnglishText = "#2E2E2E"
 
 private enum BadgeAnchor: String, CaseIterable {
     case bottomRight
@@ -39,6 +48,33 @@ private enum BadgeAnchor: String, CaseIterable {
         case .topLeft: return "Top Left"
         case .centered: return "Centered"
         }
+    }
+}
+
+private extension NSColor {
+    convenience init?(hex: String) {
+        let value = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        guard value.count == 6, let intValue = Int(value, radix: 16) else {
+            return nil
+        }
+        self.init(
+            calibratedRed: CGFloat((intValue >> 16) & 0xFF) / 255.0,
+            green: CGFloat((intValue >> 8) & 0xFF) / 255.0,
+            blue: CGFloat(intValue & 0xFF) / 255.0,
+            alpha: 1.0
+        )
+    }
+
+    var hexString: String {
+        guard let color = usingColorSpace(.sRGB) else {
+            return "#000000"
+        }
+        return String(
+            format: "#%02X%02X%02X",
+            Int(round(color.redComponent * 255)),
+            Int(round(color.greenComponent * 255)),
+            Int(round(color.blueComponent * 255))
+        )
     }
 }
 
@@ -63,6 +99,18 @@ private final class BadgeView: NSView {
             needsDisplay = true
         }
     }
+    var koreanBackgroundColor = NSColor(hex: defaultKoreanBackground)! {
+        didSet { needsDisplay = true }
+    }
+    var koreanTextColor = NSColor(hex: defaultKoreanText)! {
+        didSet { needsDisplay = true }
+    }
+    var englishBackgroundColor = NSColor(hex: defaultEnglishBackground)! {
+        didSet { needsDisplay = true }
+    }
+    var englishTextColor = NSColor(hex: defaultEnglishText)! {
+        didSet { needsDisplay = true }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -82,10 +130,8 @@ private final class BadgeView: NSView {
         context.imageInterpolation = .high
         context.shouldAntialias = true
 
-        let background = NSColor(calibratedWhite: 0.93, alpha: 0.94)
-        let textColor = isKoreanInput
-            ? NSColor(calibratedRed: 0.02, green: 0.25, blue: 0.82, alpha: 1.0)
-            : NSColor(calibratedWhite: 0.18, alpha: 1.0)
+        let background = isKoreanInput ? koreanBackgroundColor : englishBackgroundColor
+        let textColor = isKoreanInput ? koreanTextColor : englishTextColor
 
         let height = min(badgeSize, bounds.height - badgeOuterPadding * 2)
         let width = min(height * badgeAspectRatio, bounds.width - badgeOuterPadding * 2)
@@ -115,13 +161,13 @@ private final class BadgeView: NSView {
                 xRadius: max(4, radius - 1),
                 yRadius: max(4, radius - 1)
             )
-            NSColor(calibratedWhite: 1.0, alpha: 0.78).setStroke()
+            NSColor(calibratedWhite: 1.0, alpha: 0.58).setStroke()
             highlight.lineWidth = 1
             highlight.stroke()
         }
 
-        NSColor(calibratedWhite: 0.0, alpha: 0.24).setStroke()
-        path.lineWidth = 1
+        NSColor(calibratedWhite: 0.0, alpha: 0.10).setStroke()
+        path.lineWidth = 0.6
         path.stroke()
 
         let fontSize = max(11, min(20, badgeSize * 0.49))
@@ -210,6 +256,10 @@ private final class SettingsWindowController: NSWindowController {
     private let anchorPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let offsetXField = NSTextField(string: "18")
     private let offsetYField = NSTextField(string: "-32")
+    private let koreanBackgroundWell = NSColorWell(frame: .zero)
+    private let koreanTextWell = NSColorWell(frame: .zero)
+    private let englishBackgroundWell = NSColorWell(frame: .zero)
+    private let englishTextWell = NSColorWell(frame: .zero)
 
     init(appDelegate: AppDelegate) {
         self.appDelegate = appDelegate
@@ -242,6 +292,10 @@ private final class SettingsWindowController: NSWindowController {
         anchorPopup.selectItem(withTitle: appDelegate.anchor.title)
         offsetXField.stringValue = "\(Int(appDelegate.offsetX))"
         offsetYField.stringValue = "\(Int(appDelegate.offsetY))"
+        koreanBackgroundWell.color = appDelegate.koreanBackgroundColor
+        koreanTextWell.color = appDelegate.koreanTextColor
+        englishBackgroundWell.color = appDelegate.englishBackgroundColor
+        englishTextWell.color = appDelegate.englishTextColor
     }
 
     private func buildContent() {
@@ -313,62 +367,88 @@ private final class SettingsWindowController: NSWindowController {
         sizeValueLabel.frame = NSRect(x: 374, y: 244, width: 70, height: 22)
         view.addSubview(sizeValueLabel)
 
-        let koreanTitle = NSTextField(labelWithString: "Korean label")
-        koreanTitle.frame = NSRect(x: 26, y: 196, width: 100, height: 22)
+        let koreanTitle = NSTextField(labelWithString: "Korean")
+        koreanTitle.frame = NSRect(x: 26, y: 202, width: 64, height: 22)
         view.addSubview(koreanTitle)
-        koreanLabelField.frame = NSRect(x: 136, y: 192, width: 60, height: 28)
+        koreanLabelField.frame = NSRect(x: 92, y: 198, width: 48, height: 28)
         koreanLabelField.target = self
         koreanLabelField.action = #selector(labelChanged)
         view.addSubview(koreanLabelField)
 
-        let englishTitle = NSTextField(labelWithString: "English label")
-        englishTitle.frame = NSRect(x: 230, y: 196, width: 100, height: 22)
+        koreanBackgroundWell.frame = NSRect(x: 150, y: 198, width: 42, height: 28)
+        koreanBackgroundWell.target = self
+        koreanBackgroundWell.action = #selector(colorChanged)
+        view.addSubview(koreanBackgroundWell)
+
+        koreanTextWell.frame = NSRect(x: 202, y: 198, width: 42, height: 28)
+        koreanTextWell.target = self
+        koreanTextWell.action = #selector(colorChanged)
+        view.addSubview(koreanTextWell)
+
+        let englishTitle = NSTextField(labelWithString: "English")
+        englishTitle.frame = NSRect(x: 270, y: 202, width: 64, height: 22)
         view.addSubview(englishTitle)
-        englishLabelField.frame = NSRect(x: 340, y: 192, width: 60, height: 28)
+        englishLabelField.frame = NSRect(x: 336, y: 198, width: 48, height: 28)
         englishLabelField.target = self
         englishLabelField.action = #selector(labelChanged)
         view.addSubview(englishLabelField)
 
+        englishBackgroundWell.frame = NSRect(x: 394, y: 198, width: 42, height: 28)
+        englishBackgroundWell.target = self
+        englishBackgroundWell.action = #selector(colorChanged)
+        view.addSubview(englishBackgroundWell)
+
+        englishTextWell.frame = NSRect(x: 446, y: 198, width: 42, height: 28)
+        englishTextWell.target = self
+        englishTextWell.action = #selector(colorChanged)
+        view.addSubview(englishTextWell)
+
+        let colorHelp = NSTextField(labelWithString: "Order: label, background, text")
+        colorHelp.textColor = .secondaryLabelColor
+        colorHelp.font = NSFont.systemFont(ofSize: 11)
+        colorHelp.frame = NSRect(x: 26, y: 176, width: 280, height: 18)
+        view.addSubview(colorHelp)
+
         let anchorTitle = NSTextField(labelWithString: "Cursor position")
-        anchorTitle.frame = NSRect(x: 26, y: 148, width: 120, height: 22)
+        anchorTitle.frame = NSRect(x: 26, y: 142, width: 120, height: 22)
         view.addSubview(anchorTitle)
 
         anchorPopup.addItems(withTitles: BadgeAnchor.allCases.map(\.title))
-        anchorPopup.frame = NSRect(x: 146, y: 144, width: 150, height: 28)
+        anchorPopup.frame = NSRect(x: 146, y: 138, width: 150, height: 28)
         anchorPopup.target = self
         anchorPopup.action = #selector(positionChanged)
         view.addSubview(anchorPopup)
 
         let offsetTitle = NSTextField(labelWithString: "Offset X/Y")
-        offsetTitle.frame = NSRect(x: 316, y: 148, width: 78, height: 22)
+        offsetTitle.frame = NSRect(x: 316, y: 142, width: 78, height: 22)
         view.addSubview(offsetTitle)
 
-        offsetXField.frame = NSRect(x: 394, y: 144, width: 42, height: 26)
+        offsetXField.frame = NSRect(x: 394, y: 138, width: 42, height: 26)
         offsetXField.target = self
         offsetXField.action = #selector(positionChanged)
         view.addSubview(offsetXField)
 
-        offsetYField.frame = NSRect(x: 442, y: 144, width: 42, height: 26)
+        offsetYField.frame = NSRect(x: 442, y: 138, width: 42, height: 26)
         offsetYField.target = self
         offsetYField.action = #selector(positionChanged)
         view.addSubview(offsetYField)
 
         let chooseButton = NSButton(title: "Choose Image...", target: self, action: #selector(chooseImage))
-        chooseButton.frame = NSRect(x: 26, y: 96, width: 140, height: 32)
+        chooseButton.frame = NSRect(x: 26, y: 90, width: 140, height: 32)
         view.addSubview(chooseButton)
 
         let clearButton = NSButton(title: "Clear Image", target: self, action: #selector(clearImage))
-        clearButton.frame = NSRect(x: 178, y: 96, width: 110, height: 32)
+        clearButton.frame = NSRect(x: 178, y: 90, width: 110, height: 32)
         view.addSubview(clearButton)
 
-        imagePathLabel.frame = NSRect(x: 26, y: 66, width: 455, height: 22)
+        imagePathLabel.frame = NSRect(x: 26, y: 60, width: 455, height: 22)
         imagePathLabel.lineBreakMode = .byTruncatingMiddle
         view.addSubview(imagePathLabel)
 
         view.addSubview(helpText(
             "Cursor position sets where the badge sits around the cursor. X/Y offsets fine-tune the distance. The selected image is used as the badge background.",
             x: 26,
-            y: 18,
+            y: 12,
             width: 440,
             height: 40
         ))
@@ -410,7 +490,7 @@ private final class SettingsWindowController: NSWindowController {
             - Prefer Text Cursor Position: attach to the text caret when possible.
             - Icon Size: changes the floating badge size.
             - Cursor Position and Offset X/Y: place the badge around the cursor.
-            - Korean/English Label: custom text for each input source.
+            - Korean/English Label and colors: custom text, background, and text colors.
             - Choose Image: replace the badge background image.
             """,
             x: 26,
@@ -454,6 +534,15 @@ private final class SettingsWindowController: NSWindowController {
         appDelegate.setLabels(
             korean: koreanLabelField.stringValue.isEmpty ? "한" : koreanLabelField.stringValue,
             english: englishLabelField.stringValue.isEmpty ? "A" : englishLabelField.stringValue
+        )
+    }
+
+    @objc private func colorChanged() {
+        appDelegate.setColors(
+            koreanBackground: koreanBackgroundWell.color,
+            koreanText: koreanTextWell.color,
+            englishBackground: englishBackgroundWell.color,
+            englishText: englishTextWell.color
         )
     }
 
@@ -515,6 +604,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     fileprivate var anchor: BadgeAnchor = .bottomRight
     fileprivate var offsetX: CGFloat = 18
     fileprivate var offsetY: CGFloat = -32
+    fileprivate var koreanBackgroundColor = NSColor(hex: defaultKoreanBackground)!
+    fileprivate var koreanTextColor = NSColor(hex: defaultKoreanText)!
+    fileprivate var englishBackgroundColor = NSColor(hex: defaultEnglishBackground)!
+    fileprivate var englishTextColor = NSColor(hex: defaultEnglishText)!
     private var lastLabel = ""
     private var lastInputSourceID = ""
     private var lastInputCheck = Date.distantPast
@@ -585,7 +678,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             SettingKey.customImagePath: "",
             SettingKey.anchor: BadgeAnchor.bottomRight.rawValue,
             SettingKey.offsetX: 18.0,
-            SettingKey.offsetY: -32.0
+            SettingKey.offsetY: -32.0,
+            SettingKey.koreanBackgroundColor: defaultKoreanBackground,
+            SettingKey.koreanTextColor: defaultKoreanText,
+            SettingKey.englishBackgroundColor: defaultEnglishBackground,
+            SettingKey.englishTextColor: defaultEnglishText
         ])
         keepVisible = UserDefaults.standard.bool(forKey: SettingKey.keepVisible)
         preferCaret = UserDefaults.standard.bool(forKey: SettingKey.preferCaret)
@@ -601,6 +698,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         anchor = BadgeAnchor(rawValue: anchorRawValue) ?? .bottomRight
         offsetX = CGFloat(UserDefaults.standard.double(forKey: SettingKey.offsetX))
         offsetY = CGFloat(UserDefaults.standard.double(forKey: SettingKey.offsetY))
+        koreanBackgroundColor = colorSetting(SettingKey.koreanBackgroundColor, fallback: defaultKoreanBackground)
+        koreanTextColor = colorSetting(SettingKey.koreanTextColor, fallback: defaultKoreanText)
+        englishBackgroundColor = colorSetting(SettingKey.englishBackgroundColor, fallback: defaultEnglishBackground)
+        englishTextColor = colorSetting(SettingKey.englishTextColor, fallback: defaultEnglishText)
     }
 
     private func saveOptions() {
@@ -613,16 +714,29 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(anchor.rawValue, forKey: SettingKey.anchor)
         UserDefaults.standard.set(Double(offsetX), forKey: SettingKey.offsetX)
         UserDefaults.standard.set(Double(offsetY), forKey: SettingKey.offsetY)
+        UserDefaults.standard.set(koreanBackgroundColor.hexString, forKey: SettingKey.koreanBackgroundColor)
+        UserDefaults.standard.set(koreanTextColor.hexString, forKey: SettingKey.koreanTextColor)
+        UserDefaults.standard.set(englishBackgroundColor.hexString, forKey: SettingKey.englishBackgroundColor)
+        UserDefaults.standard.set(englishTextColor.hexString, forKey: SettingKey.englishTextColor)
     }
 
     private func applyAppearanceOptions() {
         window.applyBadgeSize(badgeSize)
+        window.badgeView.koreanBackgroundColor = koreanBackgroundColor
+        window.badgeView.koreanTextColor = koreanTextColor
+        window.badgeView.englishBackgroundColor = englishBackgroundColor
+        window.badgeView.englishTextColor = englishTextColor
         if !customImagePath.isEmpty, let image = NSImage(contentsOfFile: customImagePath) {
             window.badgeView.badgeImage = image
         } else {
             window.badgeView.badgeImage = nil
         }
         window.badgeView.needsDisplay = true
+    }
+
+    private func colorSetting(_ key: String, fallback: String) -> NSColor {
+        let hex = UserDefaults.standard.string(forKey: key) ?? fallback
+        return NSColor(hex: hex) ?? NSColor(hex: fallback)!
     }
 
     private func observeInputSourceChanges() {
@@ -774,7 +888,22 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         koreanLabel = String(korean.prefix(3))
         englishLabel = String(english.prefix(3))
         saveOptions()
+        refreshInputSourceIfNeeded(force: true)
         window.badgeView.needsDisplay = true
+    }
+
+    fileprivate func setColors(
+        koreanBackground: NSColor,
+        koreanText: NSColor,
+        englishBackground: NSColor,
+        englishText: NSColor
+    ) {
+        koreanBackgroundColor = koreanBackground
+        koreanTextColor = koreanText
+        englishBackgroundColor = englishBackground
+        englishTextColor = englishText
+        saveOptions()
+        applyAppearanceOptions()
     }
 
     fileprivate func setCustomImagePath(_ path: String) {
@@ -804,6 +933,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         koreanLabel = "한"
         englishLabel = "A"
         customImagePath = ""
+        koreanBackgroundColor = NSColor(hex: defaultKoreanBackground)!
+        koreanTextColor = NSColor(hex: defaultKoreanText)!
+        englishBackgroundColor = NSColor(hex: defaultEnglishBackground)!
+        englishTextColor = NSColor(hex: defaultEnglishText)!
         anchor = .bottomRight
         offsetX = 18
         offsetY = -32

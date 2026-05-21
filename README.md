@@ -1,6 +1,6 @@
 # HanAIndicator
 
-Version: `0.2.3`
+Version: `0.2.4`
 
 Small local macOS menu bar app that shows the current input source as a badge:
 
@@ -34,7 +34,7 @@ System Settings -> Privacy & Security -> Accessibility -> HanAIndicator
 The menu bar item is `한A`.
 
 - `Settings...`: opens the categorized settings window
-- `Version 0.2.3`: shows the current app version
+- `Version 0.2.4`: shows the current app version
 - `Open Accessibility Settings`: open the required macOS permission panel
 - `Quit HanAIndicator`: quit the app
 
@@ -56,6 +56,8 @@ The menu bar item is `한A`.
 - `Offset X/Y`: fine-tunes the badge distance from the cursor.
 - `Korean label`: label shown for Korean input sources, default `한`.
 - `English label`: label shown for English/ABC input sources, default `A`.
+- `Korean` and `English` color wells: set background and text colors separately
+  for each input indicator.
 - `Choose Image...`: replaces the badge background image. The label remains on
   top so the current input source is still readable.
 - `Clear Image`: removes the custom badge background image.
