@@ -4,9 +4,12 @@ import CoreGraphics
 import Foundation
 import UniformTypeIdentifiers
 
-private let appVersion = "0.2.0"
+private let appVersion = "0.2.1"
 private let defaultBadgeSize: CGFloat = 34
 private let badgeOuterPadding: CGFloat = 6
+private let idleDimDelay: TimeInterval = 1.0
+private let activeBadgeOpacity: CGFloat = 0.98
+private let idleBadgeOpacity: CGFloat = 0.48
 
 private enum SettingKey {
     static let keepVisible = "keepVisible"
@@ -73,8 +76,8 @@ private final class BadgeView: NSView {
         super.draw(dirtyRect)
 
         let background = isKoreanInput
-            ? NSColor(calibratedRed: 0.06, green: 0.38, blue: 0.96, alpha: 0.92)
-            : NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.14, alpha: 0.88)
+            ? NSColor(calibratedRed: 0.03, green: 0.36, blue: 0.96, alpha: 0.94)
+            : NSColor(calibratedWhite: 0.08, alpha: 0.92)
 
         let side = min(badgeSize, bounds.width - badgeOuterPadding * 2, bounds.height - badgeOuterPadding * 2)
         let rect = NSRect(
@@ -83,7 +86,7 @@ private final class BadgeView: NSView {
             width: side,
             height: side
         ).insetBy(dx: 1.5, dy: 1.5)
-        let radius = max(6, min(14, badgeSize * 0.2))
+        let radius = max(8, min(16, badgeSize * 0.28))
         let path = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
         if let image = badgeImage {
             NSGraphicsContext.saveGraphicsState()
@@ -96,15 +99,24 @@ private final class BadgeView: NSView {
         } else {
             background.setFill()
             path.fill()
+
+            let highlight = NSBezierPath(
+                roundedRect: rect.insetBy(dx: 1.6, dy: 1.6),
+                xRadius: max(6, radius - 2),
+                yRadius: max(6, radius - 2)
+            )
+            NSColor(calibratedWhite: 1.0, alpha: isKoreanInput ? 0.16 : 0.11).setStroke()
+            highlight.lineWidth = 1
+            highlight.stroke()
         }
 
-        NSColor(calibratedWhite: 1.0, alpha: 0.26).setStroke()
+        NSColor(calibratedWhite: 1.0, alpha: 0.34).setStroke()
         path.lineWidth = 1
         path.stroke()
 
-        let fontSize = max(11, min(28, badgeSize * 0.47))
+        let fontSize = max(11, min(28, badgeSize * 0.45))
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: fontSize, weight: .bold),
+            .font: NSFont.systemFont(ofSize: fontSize, weight: .semibold),
             .foregroundColor: NSColor.white
         ]
         let size = label.size(withAttributes: attrs)
@@ -481,6 +493,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cachedIsKorean = false
     private var cachedSourceID = ""
     private var lastCaretPoint: CGPoint?
+    private var lastMouseActivity = Date()
+    private var isDimmed = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -606,6 +620,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func tick() {
         refreshInputSourceIfNeeded(force: false)
+        updateIdleOpacity()
 
         guard keepVisible || Date() < hideAt else {
             window.orderOut(nil)
@@ -654,6 +669,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func fastMouseUpdate() {
+        markMouseActive()
         guard !preferCaret else {
             return
         }
@@ -663,6 +679,33 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         moveBadge(near: mousePoint())
         if !window.isVisible {
             window.orderFrontRegardless()
+        }
+    }
+
+    private func markMouseActive() {
+        lastMouseActivity = Date()
+        guard isDimmed || window.alphaValue < activeBadgeOpacity else {
+            return
+        }
+        isDimmed = false
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.12
+            window.animator().alphaValue = activeBadgeOpacity
+        }
+    }
+
+    private func updateIdleOpacity() {
+        guard window.isVisible else {
+            return
+        }
+        let shouldDim = Date().timeIntervalSince(lastMouseActivity) >= idleDimDelay
+        guard shouldDim != isDimmed else {
+            return
+        }
+        isDimmed = shouldDim
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.18
+            window.animator().alphaValue = shouldDim ? idleBadgeOpacity : activeBadgeOpacity
         }
     }
 

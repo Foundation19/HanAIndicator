@@ -1,6 +1,6 @@
 # HanAIndicator
 
-Version: `0.2.0`
+Version: `0.2.1`
 
 Small local macOS menu bar app that shows the current input source as a badge:
 
@@ -34,7 +34,7 @@ System Settings -> Privacy & Security -> Accessibility -> HanAIndicator
 The menu bar item is `한A`.
 
 - `Settings...`: opens the categorized settings window
-- `Version 0.2.0`: shows the current app version
+- `Version 0.2.1`: shows the current app version
 - `Open Accessibility Settings`: open the required macOS permission panel
 - `Quit HanAIndicator`: quit the app
 
@@ -59,6 +59,8 @@ The menu bar item is `한A`.
 - `Choose Image...`: replaces the badge background image. The label remains on
   top so the current input source is still readable.
 - `Clear Image`: removes the custom badge background image.
+- The badge fades to a semi-transparent state after the mouse has been still
+  for one second, then returns to full opacity when the mouse moves again.
 
 ### Advanced
 
