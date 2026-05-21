@@ -1,5 +1,7 @@
 # HanAIndicator
 
+Version: `0.2.0`
+
 Small local macOS menu bar app that shows the current input source as a badge:
 
 - Korean input sources such as `2-Set Korean` -> `한`
@@ -31,7 +33,35 @@ System Settings -> Privacy & Security -> Accessibility -> HanAIndicator
 
 The menu bar item is `한A`.
 
-- `Keep Badge Visible`: keep the badge visible, Keyla-style
-- `Prefer Text Cursor Position`: try the blinking text caret first
+- `Settings...`: opens the categorized settings window
+- `Version 0.2.0`: shows the current app version
 - `Open Accessibility Settings`: open the required macOS permission panel
 - `Quit HanAIndicator`: quit the app
+
+## Settings
+
+### General
+
+- `Keep badge visible`: keeps the badge on screen while you type. Turn this off
+  if you only want a short confirmation after switching input sources.
+- `Prefer text cursor position`: tries to attach the badge to the blinking text
+  cursor. If the active app does not expose a cursor rectangle through
+  Accessibility, HanAIndicator falls back to the mouse pointer.
+
+### Indicator
+
+- `Icon size`: changes the floating badge size from 22 px to 96 px.
+- `Korean label`: label shown for Korean input sources, default `한`.
+- `English label`: label shown for English/ABC input sources, default `A`.
+- `Choose Image...`: replaces the badge background image. The label remains on
+  top so the current input source is still readable.
+- `Clear Image`: removes the custom badge background image.
+
+### Advanced
+
+- `Reset Options`: restores defaults.
+- `Open Project Folder`: opens the local project folder.
+
+### About
+
+Explains the current options and version inside the app.
