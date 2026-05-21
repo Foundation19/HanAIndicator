@@ -22,15 +22,15 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key>
   <string>HanAIndicator</string>
   <key>CFBundleIdentifier</key>
-  <string>local.hanaindicator.app</string>
+  <string>local.caticator.app</string>
   <key>CFBundleName</key>
-  <string>HanAIndicator</string>
+  <string>Caticator</string>
   <key>CFBundleDisplayName</key>
-  <string>HanAIndicator</string>
+  <string>Caticator</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.2.4</string>
+  <string>0.3.0</string>
   <key>CFBundleVersion</key>
   <string>1</string>
   <key>LSMinimumSystemVersion</key>
@@ -43,5 +43,13 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-codesign --force --deep --sign - "$APP" >/dev/null
+# 고정 인증서로 서명 — 빌드마다 해시가 바뀌지 않아 AX 권한 유지됨
+CERT="HanAIndicator Local"
+if security find-certificate -c "$CERT" ~/Library/Keychains/login.keychain-db >/dev/null 2>&1; then
+  codesign --force --deep --sign "$CERT" "$APP" 2>/dev/null \
+    && echo "Signed: $CERT" \
+    || { echo "서명 실패 → ad-hoc 폴백"; codesign --force --deep --sign - "$APP" >/dev/null; }
+else
+  codesign --force --deep --sign - "$APP" >/dev/null
+fi
 echo "Built: $APP"

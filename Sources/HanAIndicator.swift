@@ -2,13 +2,16 @@ import AppKit
 import Carbon
 import CoreGraphics
 import Foundation
+import ImageIO
+import os
 import UniformTypeIdentifiers
 
-private let appVersion = "0.2.4"
-private let defaultBadgeSize: CGFloat = 28
+private let log = Logger(subsystem: "com.hanaindicator", category: "app")
+
+private let appVersion = "0.3.0"
+private let defaultBadgeSize: CGFloat = 25
 private let badgeOuterPadding: CGFloat = 5
 private let badgeAspectRatio: CGFloat = 1.42
-private let idleDimDelay: TimeInterval = 1.0
 private let activeBadgeOpacity: CGFloat = 0.96
 private let idleBadgeOpacity: CGFloat = 0.42
 
@@ -26,7 +29,18 @@ private enum SettingKey {
     static let koreanTextColor = "koreanTextColor"
     static let englishBackgroundColor = "englishBackgroundColor"
     static let englishTextColor = "englishTextColor"
+    static let idleDimDelay = "idleDimDelay"
+    static let badgeDisplayMode = "badgeDisplayMode"
+    static let blackCatMode = "blackCatMode"
+    static let blackCatGifPath = "blackCatGifPath"
+    static let koreanImagePath = "koreanImagePath"
+    static let englishImagePath = "englishImagePath"
+    static let flipHorizontal = "flipHorizontal"
 }
+
+// swiftlint:disable line_length
+private let embeddedBlackCatGif = "R0lGODlhQABAAIEAAAAAAAgIBwAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQJDAAAACwAAAAAQABAAAAI/wABCBxIsKDBgwgTKlzIsKHDhxAjSpxIsaLFixgzatzIsaPHjyBDihxJsqTJkAECnFyYsqXKgilXKnQZc6BLhDVF0qRJ8ObBnCh3tuzJ02ZRkEJfEvUpcKdOoUuTQv3o9KfUpEiPwrw6lWNVnFy/bhRrMCzWsVrLmiV7kW3TtV3bpt0Kdy5Ft0bf+qy7NipQsHqHAuBr1q/ShIQTw2WouDFXxo4jM2UpuTLEypEvY24scTPnh54VWwxduCLpsBhPS02tOu7d1mdfw8brcLbriLZpU859GzJv3WDFxjY6OXDxhsOHGz+8/O9uu4Pn4lWOuHf049OtG3YeVe1x74Jnahu/zpw8d7rhZapfz769+/fw48ufT7++/fvzAwIAIfkECQwAAAAsAAAAAEAAQACCAAAABgYFFBUUKSoqRkVFNjY2WllaAAAACP8AAQgcSLCgwYMIEypcyLChw4cQI0qcSLGixYsYM2rcyLGjx48gQ4ocSbKkyZADBpxcGKClS4MtVyp0+XIgTYQxSdLcSfDmwZwjd/oUKLTn0JBCA8DkafMoyKRGk0oVyXSpVKhInTa9WvRj1Z9cu3r8ajUs2Yxno5rVijEtgLVTN4otC7emxrkFc3aty1ctUJxK3zLlW9dv4ISEEydmqbhxWAMEGDuejBcw5csEIju8TDki58kTPzv2LFrxxdJrT6PmKgDt6riqX8OmKPsqxgG1K0sskNvtw95JW9MGvlM4aayzt9olmryhbcG68T7fLNU4c7bRdSOefn258r/fwUsj9q4WLFu/ELWn1f7dYwGZ8OPLn0+/vv37+PPr38+/v/+QAQEAIfkECQwAAAAsAAAAAEAAQACDAAAABgYGERIRSEdHaGhpWlpaJSUmeXZ6Oz07IB4gAAAAAAAAAAAAAAAAAAAAAAAACP8AAQgcSLCgwYMIEypcyLChw4cQI0qcSLGixYsYM2rcyLGjx48gQ4ocSbKkyZMoDQZYydKggAEpE7JsWXBlzJozZxLUqTKAyZw8BQbd6bMk0KJEgwIlebSn0pwioR48StVmSKlOq2L1uBWn1q4amyL8upRr2alkz4YdijYtW4tgvbp9WzFuUgFzrWK0S1TozAQA8qZtq1dm0ZwGAgtezHcg48eDF0KeLJYh5cs0HWKmDHHz4wMTPQsmEFq04IsGTH+9iEC11oyuqcKOrbYu7coUb+MurZvuw967OwNvbHg48aSvkWdWjtSvbIWRHdd2vhzAgKrFsWdvLv1t8qwzBxQqKEB6O+HCzNF3P+78PHe5vi3ifa84/s37+PPr38+/v///AAYo4IAEhhQQACH5BAkMAAAALAAAAABAAEAAggAAAAcHBhMTEyYnJURERGRjZDEyMnp4eQj/AAEIHEiwoMGDCBMqXMiwocOHECNKnEixosWLGDNq3Mixo8ePIEOKHEmypMmQAQKcXJiypcqCKREKeGnSZcyBLhHeHGkzJ86WOmmK7An0p0+BPXkmhWmT4FKUTwEQnVr0o00BB6lS/TiAQFSjWpt6/Oo0LNmMZ5GaJdoxrdS1bilezQqXrUa3de2idYk1qFqfeeuWPer3LeDAawdXDYq4MVyWjiOHhSy5MuGEljPvZKi58sPOkiOCjvx5dOOKphPLTT3ZIuutrl/rXS17tujatiHizl1692WHvmH3Di52eHHDv3NPvT2b6AGmx/9GV7j8oAGbBQrOnC79N920A2wSKYDuHXl5sOe5x+0u9Dv37u43M168sr79+/jz69/Pv7///wAGKOCACQUEACH5BAkMAAAALAAAAABAAEAAggAAAAcHBhgYFllZWWlpaiEhIIKAgH9/fQj/AAEIHEiwoMGDCBMqXMiwocOHECNKnEixosWLGDNq3Mixo8ePIEOKHEmypMmTKCUGCIBwJcqVMFkOjNlSpkgCAwrEhEmQ5kGXI3fu7Dl0ZlGQQoES9SlQqMikNgFAnRqVo9OfVJMiPVowq9aOV2t6ZboxLNaxXDGaLXgA7dqLb5u6jTuRrlwBc3lmtCtV5tW8Y5fqVQj0L+CsgpUmPMw48MLGkKcyjEx58OPKlCFihqx5M2OVng93Dp3XImmvpk9TVav6a+rWaevCdi17duzRti2Dzq0bN++qvh0nnlubLG25ZJHzPYg3KYGBA97SPT6Zet/e062f3Yn3rIGCzXsXIYx+ezvMAosVK1dvHnjK9/Djy59Pv779+/jz69/Pv7//gAAh+QQJDAAAACwAAAAAQABAAIIAAAAHBwYRERBvcXA7PDwAAAAAAAAAAAAI/wABCBxIsKDBgwgTKlzIsKHDhxAjSpxIsaLFixgzatzIsaPHjyBDihxJsqTJkAECnGSYsqXBlAgJrBTYEubAmghtkqyJ82bLAQd1juTp0mdPmjyHEhVQkChBpyKJ6pRKtehHqE2rUkWZ9KVWqVe7Bv2KlWPZrGTPYlRrNO1RjTyZenXLlmJdAHTBwq0pdyzSnnnpohXqF2/XwG4Hq1SIuHHehY4jk4UsubJYxpYzL26oufLDzpIjgo78eXTjiqbTok799SLrqq5f610te7bE2lvt4r7Lcvfl0r5tMxQQPLdD2G3f/rX6VHjC1smZLyc8XfpY5HOt3zV+/XDO34aVNyXnzb27QeLiu1Mfv9684s2Y08+cT7++/fv48+vfz7+///8A3hcQACH5BAkMAAAALAAAAABAAEAAggAAAAYGBigpKTIzMxcXF25tb1BQTwAAAAj/AAEIHEiwoMGDCBMqXMiwocOHECNKnEixosWLGDNq3Mixo8ePIEOKHEmypMmTKA0GWMlSZYCUCVm2LLgSJkGZOF8OlImw5sicPHfOdEkSqM6bOJEGBWmUoIECOZUO7Rj1oNGrR6kmtYoVqMeqPbuC3TjWpdiyF9FKPTsVo1oAbJtmfCswrte5W8MaHSAA6wC+Av4GFkCAwNW1WcPW3WqXLWKGPqs2npw3JuXLYiFj3kyXJufPPjWD5gxx9ObSpi9LTK36IWABhFmftSg7c9racmnjvqt7N++JvnMDD95ZNPG2D48fjqhc+EKsntG2bggdcWihleH+Vric61Ls38GHLo+e3Tvy7Ys7AyVg3Ox48tfdx7c833B5+Ilt6t/Pv7///wAGKOCABBZo4IETBQQAIfkECQwAAAAsAAAAAEAAQACBAAAABwcGEhITAAAACP8AAQgcSLCgwYMIEypcyLChw4cQI0qcSLGixYsYM2rcyLGjx48gQ4ocSbKkyZABApxcmLKlyoIpVyp0GXOgS4Q1RdKkSfDmwZwod7bsydNmUZBCXxL1KXCnTqFLk0L96PSn1KRIj8K8OpVjVZxcv24UazAs1rFay5ole5Ft07Vd26bdCncuRbdG3/qsuzYqULB6hwLga9av0oSEE8NlqLgxV8aOIzNlKbkyxMqRL2NuLHEz54eeFVsMXbgi6bAYT0tNrTru3dZnX8PG63C264i2aVPOfXuhAN6xIa82yrZ4b7Bugwf+O/g4XbuG1U42zPz5dOmCo1vV3fz69sPLwX8cr659t3ju3bPLXM++vfv38OPLn0+/vv37+OkHBAA7"
+// swiftlint:enable line_length
 
 private let defaultKoreanBackground = "#EEF3FF"
 private let defaultKoreanText = "#053FD1"
@@ -85,9 +99,13 @@ private final class BadgeView: NSView {
         }
     }
     var badgeImage: NSImage? {
-        didSet {
-            needsDisplay = true
-        }
+        didSet { needsDisplay = true }
+    }
+    var koreanBadgeImage: NSImage? {
+        didSet { needsDisplay = true }
+    }
+    var englishBadgeImage: NSImage? {
+        didSet { needsDisplay = true }
     }
     var badgeSize: CGFloat = defaultBadgeSize {
         didSet {
@@ -111,6 +129,12 @@ private final class BadgeView: NSView {
     var englishTextColor = NSColor(hex: defaultEnglishText)! {
         didSet { needsDisplay = true }
     }
+    var flipHorizontal = false {
+        didSet { needsDisplay = true }
+    }
+    var gifFrames: [(CGImage, TimeInterval)] = []
+    var currentFrameIndex = 0
+    private var gifTimer: Timer?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -124,12 +148,39 @@ private final class BadgeView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
-        guard let context = NSGraphicsContext.current else {
-            return
-        }
+        guard let context = NSGraphicsContext.current else { return }
         context.imageInterpolation = .high
         context.shouldAntialias = true
 
+        // GIF 애니메이션 프레임 — 이미지/레이블 모두 스킵
+        if !gifFrames.isEmpty {
+            let cgCtx = context.cgContext
+            cgCtx.saveGState()
+            if flipHorizontal {
+                cgCtx.translateBy(x: bounds.width, y: 0)
+                cgCtx.scaleBy(x: -1, y: 1)
+            }
+            cgCtx.draw(gifFrames[currentFrameIndex].0, in: bounds)
+            cgCtx.restoreGState()
+            return
+        }
+
+        // 정적 이미지 — 언어별 이미지 우선, 레이블 스킵
+        let langImage = isKoreanInput ? koreanBadgeImage : englishBadgeImage
+        if let image = langImage ?? badgeImage {
+            NSGraphicsContext.saveGraphicsState()
+            if flipHorizontal {
+                let t = NSAffineTransform()
+                t.translateX(by: bounds.width, yBy: 0)
+                t.scaleX(by: -1, yBy: 1)
+                t.concat()
+            }
+            image.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1.0)
+            NSGraphicsContext.restoreGraphicsState()
+            return
+        }
+
+        // 색상 배지 + 레이블
         let background = isKoreanInput ? koreanBackgroundColor : englishBackgroundColor
         let textColor = isKoreanInput ? koreanTextColor : englishTextColor
 
@@ -144,27 +195,18 @@ private final class BadgeView: NSView {
         let rect = pixelAligned(rawRect)
         let radius = rect.height / 2
         let path = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
-        if let image = badgeImage {
-            NSGraphicsContext.saveGraphicsState()
-            path.addClip()
-            image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1.0)
-            NSGraphicsContext.restoreGraphicsState()
 
-            NSColor(calibratedWhite: 0.0, alpha: 0.34).setFill()
-            path.fill()
-        } else {
-            background.setFill()
-            path.fill()
+        background.setFill()
+        path.fill()
 
-            let highlight = NSBezierPath(
-                roundedRect: pixelAligned(rect.insetBy(dx: 1.0, dy: 1.0)),
-                xRadius: max(4, radius - 1),
-                yRadius: max(4, radius - 1)
-            )
-            NSColor(calibratedWhite: 1.0, alpha: 0.58).setStroke()
-            highlight.lineWidth = 1
-            highlight.stroke()
-        }
+        let highlight = NSBezierPath(
+            roundedRect: pixelAligned(rect.insetBy(dx: 1.0, dy: 1.0)),
+            xRadius: max(4, radius - 1),
+            yRadius: max(4, radius - 1)
+        )
+        NSColor(calibratedWhite: 1.0, alpha: 0.58).setStroke()
+        highlight.lineWidth = 1
+        highlight.stroke()
 
         NSColor(calibratedWhite: 0.0, alpha: 0.10).setStroke()
         path.lineWidth = 0.6
@@ -200,6 +242,159 @@ private final class BadgeView: NSView {
             y: (point.y * scale).rounded() / scale
         )
     }
+
+    func loadGIF(from url: URL) {
+        log.info("loadGIF(url): \(url.lastPathComponent)")
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            log.error("loadGIF(url): CGImageSourceCreateWithURL failed — \(url.path)")
+            return
+        }
+        loadGIF(source: src)
+    }
+
+    func loadGIF(from data: Data) {
+        log.info("loadGIF(data): \(data.count) bytes")
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil) else {
+            log.error("loadGIF(data): CGImageSourceCreateWithData failed")
+            return
+        }
+        loadGIF(source: src)
+    }
+
+    private func loadGIF(source src: CGImageSource) {
+        stopGIFAnimation()
+        gifFrames = []
+        currentFrameIndex = 0
+        let count = CGImageSourceGetCount(src)
+        log.info("loadGIF(source): \(count) frame(s) found")
+
+        // 1패스: 모든 프레임 수집 + 최대 크기 파악
+        var rawFrames: [(CGImage, TimeInterval)] = []
+        var maxSide = 0
+        for i in 0..<count {
+            guard let cgImage = CGImageSourceCreateImageAtIndex(src, i, nil) else {
+                log.warning("loadGIF: frame \(i) skipped")
+                continue
+            }
+            let props = CGImageSourceCopyPropertiesAtIndex(src, i, nil) as? [CFString: Any]
+            let gifProps = props?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
+            let delay = (gifProps?[kCGImagePropertyGIFUnclampedDelayTime] as? Double)
+                ?? (gifProps?[kCGImagePropertyGIFDelayTime] as? Double)
+                ?? 0.1
+            maxSide = max(maxSide, cgImage.width, cgImage.height)
+            rawFrames.append((cgImage, max(0.02, delay)))
+        }
+
+        // 2패스: 정사각형 캔버스로 통일 + 배경 제거
+        let side = max(maxSide, 1)
+        for (cgImage, delay) in rawFrames {
+            let normalized = normalizeFrame(cgImage, side: side)
+            let processed = removeBackground(normalized) ?? normalized
+            gifFrames.append((processed, delay))
+        }
+
+        log.info("loadGIF: loaded \(self.gifFrames.count) frame(s), canvas=\(side)x\(side)")
+        if !gifFrames.isEmpty { scheduleNextFrame() }
+        else { log.error("loadGIF: no frames loaded — nothing will display") }
+    }
+
+    // 임의 크기 프레임을 side×side 정사각형 중앙 배치로 정규화
+    private func normalizeFrame(_ src: CGImage, side: Int) -> CGImage {
+        guard src.width != side || src.height != side else { return src }
+        guard let ctx = CGContext(
+            data: nil, width: side, height: side,
+            bitsPerComponent: 8, bytesPerRow: side * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return src }
+        let ox = (side - src.width) / 2
+        let oy = (side - src.height) / 2
+        ctx.draw(src, in: CGRect(x: ox, y: oy, width: src.width, height: src.height))
+        return ctx.makeImage() ?? src
+    }
+
+    // 밝은 단색 배경을 투명으로 변환. 크래시 방지를 위해 경계 검사 포함.
+    private func removeBackground(_ src: CGImage) -> CGImage? {
+        let w = src.width, h = src.height
+        guard w > 0, h > 0 else { return nil }
+
+        // 기존 투명 픽셀이 있으면 처리 생략
+        let ai = src.alphaInfo
+        let hasRealAlpha = ai == .premultipliedLast || ai == .premultipliedFirst
+            || ai == .last || ai == .first || ai == .alphaOnly
+        if hasRealAlpha {
+            guard let ctx0 = CGContext(
+                data: nil, width: min(w, 4), height: min(h, 4),
+                bitsPerComponent: 8, bytesPerRow: min(w, 4) * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return nil }
+            ctx0.draw(src, in: CGRect(x: 0, y: 0, width: min(w, 4), height: min(h, 4)))
+            if let d = ctx0.data {
+                let b = d.bindMemory(to: UInt8.self, capacity: min(w, 4) * min(h, 4) * 4)
+                for i in 0..<(min(w, 4) * min(h, 4)) {
+                    if b[i * 4 + 3] < 200 {
+                        log.debug("removeBackground: already has transparency — skip")
+                        return nil
+                    }
+                }
+            }
+        }
+
+        guard let ctx = CGContext(
+            data: nil, width: w, height: h,
+            bitsPerComponent: 8, bytesPerRow: w * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            log.error("removeBackground: CGContext creation failed (\(w)x\(h))")
+            return nil
+        }
+        ctx.draw(src, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let data = ctx.data else { return nil }
+
+        let totalPixels = w * h
+        let buf = data.bindMemory(to: UInt8.self, capacity: totalPixels * 4)
+
+        // 모서리 3곳으로 배경 밝기 판정
+        let corners = [0, (w - 1), w * (h - 1)]
+        let avgBg = corners.map { idx -> Int in
+            Int(buf[idx * 4]) + Int(buf[idx * 4 + 1]) + Int(buf[idx * 4 + 2])
+        }.reduce(0, +) / (corners.count * 3)
+
+        guard avgBg > 180 else {
+            log.debug("removeBackground: background not bright (avg=\(avgBg)) — skip")
+            return nil
+        }
+
+        let threshold: UInt8 = 160
+        for i in 0..<totalPixels {
+            let r = buf[i * 4], g = buf[i * 4 + 1], b = buf[i * 4 + 2]
+            if r > threshold && g > threshold && b > threshold {
+                buf[i * 4 + 3] = 0
+            }
+        }
+        log.debug("removeBackground: applied to \(w)x\(h)")
+        return ctx.makeImage()
+    }
+
+    func stopGIFAnimation() {
+        gifTimer?.invalidate()
+        gifTimer = nil
+    }
+
+    private func scheduleNextFrame() {
+        guard !gifFrames.isEmpty else { return }
+        let delay = gifFrames[currentFrameIndex].1
+        let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
+            guard let self = self, !self.gifFrames.isEmpty else { return }
+            self.currentFrameIndex = (self.currentFrameIndex + 1) % self.gifFrames.count
+            self.needsDisplay = true
+            self.scheduleNextFrame()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        gifTimer = timer
+    }
 }
 
 private final class BadgeWindow: NSPanel {
@@ -229,15 +424,17 @@ private final class BadgeWindow: NSPanel {
         isOpaque = false
         hasShadow = true
         ignoresMouseEvents = true
-        level = .floating
+        // Dock(~20), 메뉴바(~24) 위에 표시되려면 25+ 필요
+        // statusBar(25)보다 한 단계 높은 레벨 사용
+        level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)) - 1)
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         orderOut(nil)
     }
 
-    func applyBadgeSize(_ size: CGFloat) {
+    func applyBadgeSize(_ size: CGFloat, imageMode: Bool = false) {
         let width = max(14, min(72, size))
-        let windowWidth = width * badgeAspectRatio + badgeOuterPadding * 2
-        let windowHeight = width + badgeOuterPadding * 2
+        let windowWidth = imageMode ? width : width * badgeAspectRatio + badgeOuterPadding * 2
+        let windowHeight = imageMode ? width : width + badgeOuterPadding * 2
         badgeView.badgeSize = width
         badgeView.frame = NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight)
         setContentSize(NSSize(width: windowWidth, height: windowHeight))
@@ -248,18 +445,29 @@ private final class SettingsWindowController: NSWindowController {
     private unowned let appDelegate: AppDelegate
     private let keepVisibleButton = NSButton(checkboxWithTitle: "Keep badge visible", target: nil, action: nil)
     private let preferCaretButton = NSButton(checkboxWithTitle: "Prefer text cursor position", target: nil, action: nil)
+    private let axStatusLabel = NSTextField(labelWithString: "Checking...")
     private let sizeSlider = NSSlider(value: Double(defaultBadgeSize), minValue: 14, maxValue: 72, target: nil, action: nil)
-    private let sizeValueLabel = NSTextField(labelWithString: "\(Int(defaultBadgeSize)) px")
+    private let sizeValueLabel = NSTextField(string: "\(Int(defaultBadgeSize))")
+    private let dimDelayField = NSTextField(string: "2.0")
     private let koreanLabelField = NSTextField(string: "한")
     private let englishLabelField = NSTextField(string: "A")
     private let imagePathLabel = NSTextField(labelWithString: "No custom image selected")
     private let anchorPopup = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let offsetXField = NSTextField(string: "18")
-    private let offsetYField = NSTextField(string: "-32")
+    private let offsetXField = NSTextField(string: "8")
+    private let offsetYField = NSTextField(string: "-10")
     private let koreanBackgroundWell = NSColorWell(frame: .zero)
     private let koreanTextWell = NSColorWell(frame: .zero)
     private let englishBackgroundWell = NSColorWell(frame: .zero)
     private let englishTextWell = NSColorWell(frame: .zero)
+    private let labelsRadio = NSButton(radioButtonWithTitle: "Labels (Default)", target: nil, action: nil)
+    private let imagesRadio = NSButton(radioButtonWithTitle: "Image per language", target: nil, action: nil)
+    private var labelsSectionView: NSView?
+    private var imagesSectionView: NSView?
+    private let koreanImageLabel = NSTextField(labelWithString: "No image selected")
+    private let englishImageLabel = NSTextField(labelWithString: "No image selected")
+    private let flipHCheckbox = NSButton(checkboxWithTitle: "Flip Horizontal", target: nil, action: nil)
+    private let blackCatCheckbox = NSButton(checkboxWithTitle: "BlackCat Mode  (Korean only — shows animated GIF, hides on English)", target: nil, action: nil)
+    private let blackCatGifLabel = NSTextField(labelWithString: "Built-in GIF (no override)")
 
     init(appDelegate: AppDelegate) {
         self.appDelegate = appDelegate
@@ -269,7 +477,7 @@ private final class SettingsWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "HanAIndicator Settings"
+        window.title = "Caticator Settings"
         window.center()
         super.init(window: window)
         buildContent()
@@ -280,15 +488,21 @@ private final class SettingsWindowController: NSWindowController {
     }
 
     func refresh() {
+        let axTrusted = AXIsProcessTrusted()
+        if axTrusted {
+            axStatusLabel.stringValue = "✅  Accessibility: Granted — caret tracking active"
+            axStatusLabel.textColor = NSColor.systemGreen
+        } else {
+            axStatusLabel.stringValue = "❌  Accessibility: Not granted — badge will follow mouse only"
+            axStatusLabel.textColor = NSColor.systemRed
+        }
         keepVisibleButton.state = appDelegate.keepVisible ? .on : .off
         preferCaretButton.state = appDelegate.preferCaret ? .on : .off
         sizeSlider.doubleValue = Double(appDelegate.badgeSize)
-        sizeValueLabel.stringValue = "\(Int(appDelegate.badgeSize)) px"
+        sizeValueLabel.stringValue = "\(Int(appDelegate.badgeSize))"
+        dimDelayField.stringValue = String(format: "%.1f", appDelegate.idleDimDelay)
         koreanLabelField.stringValue = appDelegate.koreanLabel
         englishLabelField.stringValue = appDelegate.englishLabel
-        imagePathLabel.stringValue = appDelegate.customImagePath.isEmpty
-            ? "No custom image selected"
-            : appDelegate.customImagePath
         anchorPopup.selectItem(withTitle: appDelegate.anchor.title)
         offsetXField.stringValue = "\(Int(appDelegate.offsetX))"
         offsetYField.stringValue = "\(Int(appDelegate.offsetY))"
@@ -296,6 +510,20 @@ private final class SettingsWindowController: NSWindowController {
         koreanTextWell.color = appDelegate.koreanTextColor
         englishBackgroundWell.color = appDelegate.englishBackgroundColor
         englishTextWell.color = appDelegate.englishTextColor
+        let mode = appDelegate.badgeDisplayMode
+        labelsRadio.state = mode == "labels" ? .on : .off
+        imagesRadio.state = mode == "images" ? .on : .off
+        updateSectionVisibility(mode: mode)
+        koreanImageLabel.stringValue = appDelegate.koreanImagePath.isEmpty ? "No image selected" : appDelegate.koreanImagePath
+        englishImageLabel.stringValue = appDelegate.englishImagePath.isEmpty ? "No image selected" : appDelegate.englishImagePath
+        flipHCheckbox.state = appDelegate.flipHorizontal ? .on : .off
+        blackCatCheckbox.state = appDelegate.blackCatMode ? .on : .off
+        blackCatGifLabel.stringValue = appDelegate.blackCatGifPath.isEmpty ? "Built-in GIF (no override)" : appDelegate.blackCatGifPath
+    }
+
+    private func updateSectionVisibility(mode: String) {
+        labelsSectionView?.isHidden = mode != "labels"
+        imagesSectionView?.isHidden = mode != "images"
     }
 
     private func buildContent() {
@@ -344,8 +572,21 @@ private final class SettingsWindowController: NSWindowController {
             width: 420
         ))
 
-        let accessButton = NSButton(title: "Open Accessibility Settings", target: self, action: #selector(openAccessibilitySettings))
-        accessButton.frame = NSRect(x: 26, y: 54, width: 210, height: 32)
+        // AX 권한 상태 표시
+        axStatusLabel.frame = NSRect(x: 26, y: 80, width: 460, height: 20)
+        axStatusLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        view.addSubview(axStatusLabel)
+
+        let diagButton = NSButton(title: "🔍 Diagnose Caret", target: self, action: #selector(diagnoseAX))
+        diagButton.frame = NSRect(x: 26, y: 46, width: 160, height: 28)
+        view.addSubview(diagButton)
+
+        let reqButton = NSButton(title: "Request Permission", target: self, action: #selector(requestAXPermission))
+        reqButton.frame = NSRect(x: 196, y: 46, width: 160, height: 28)
+        view.addSubview(reqButton)
+
+        let accessButton = NSButton(title: "Open AX Settings", target: self, action: #selector(openAccessibilitySettings))
+        accessButton.frame = NSRect(x: 366, y: 46, width: 130, height: 28)
         view.addSubview(accessButton)
 
         return view
@@ -353,105 +594,156 @@ private final class SettingsWindowController: NSWindowController {
 
     private func indicatorView() -> NSView {
         let view = NSView(frame: NSRect(x: 0, y: 0, width: 510, height: 340))
-        addHeader("Badge Appearance", to: view, y: 292)
+        addHeader("Badge Appearance", to: view, y: 312)
 
+        // ── Icon size ────────────────────────────────────────────
         let sizeTitle = NSTextField(labelWithString: "Icon size")
-        sizeTitle.frame = NSRect(x: 26, y: 244, width: 120, height: 22)
+        sizeTitle.frame = NSRect(x: 26, y: 280, width: 80, height: 22)
         view.addSubview(sizeTitle)
-
-        sizeSlider.frame = NSRect(x: 112, y: 238, width: 250, height: 30)
-        sizeSlider.target = self
-        sizeSlider.action = #selector(sizeChanged)
+        sizeSlider.frame = NSRect(x: 108, y: 274, width: 200, height: 30)
+        sizeSlider.target = self; sizeSlider.action = #selector(sizeChanged)
         view.addSubview(sizeSlider)
-
-        sizeValueLabel.frame = NSRect(x: 374, y: 244, width: 70, height: 22)
+        sizeValueLabel.frame = NSRect(x: 314, y: 274, width: 52, height: 28)
+        sizeValueLabel.isEditable = true
+        sizeValueLabel.isBordered = true
+        sizeValueLabel.bezelStyle = .roundedBezel
+        sizeValueLabel.target = self
+        sizeValueLabel.action = #selector(sizeFieldChanged)
         view.addSubview(sizeValueLabel)
+        let pxLabel = NSTextField(labelWithString: "px")
+        pxLabel.frame = NSRect(x: 370, y: 280, width: 28, height: 18)
+        pxLabel.textColor = .secondaryLabelColor
+        view.addSubview(pxLabel)
+        flipHCheckbox.frame = NSRect(x: 402, y: 278, width: 130, height: 20)
+        flipHCheckbox.target = self
+        flipHCheckbox.action = #selector(flipHChanged)
+        view.addSubview(flipHCheckbox)
 
-        let koreanTitle = NSTextField(labelWithString: "Korean")
-        koreanTitle.frame = NSRect(x: 26, y: 202, width: 64, height: 22)
-        view.addSubview(koreanTitle)
-        koreanLabelField.frame = NSRect(x: 92, y: 198, width: 48, height: 28)
-        koreanLabelField.target = self
-        koreanLabelField.action = #selector(labelChanged)
-        view.addSubview(koreanLabelField)
+        // ── Display mode radio buttons ───────────────────────────
+        labelsRadio.frame = NSRect(x: 26, y: 252, width: 160, height: 20)
+        labelsRadio.target = self; labelsRadio.action = #selector(modeChanged)
+        view.addSubview(labelsRadio)
+        imagesRadio.frame = NSRect(x: 196, y: 252, width: 200, height: 20)
+        imagesRadio.target = self; imagesRadio.action = #selector(modeChanged)
+        view.addSubview(imagesRadio)
 
-        koreanBackgroundWell.frame = NSRect(x: 150, y: 198, width: 42, height: 28)
-        koreanBackgroundWell.target = self
-        koreanBackgroundWell.action = #selector(colorChanged)
-        view.addSubview(koreanBackgroundWell)
-
-        koreanTextWell.frame = NSRect(x: 202, y: 198, width: 42, height: 28)
-        koreanTextWell.target = self
-        koreanTextWell.action = #selector(colorChanged)
-        view.addSubview(koreanTextWell)
-
-        let englishTitle = NSTextField(labelWithString: "English")
-        englishTitle.frame = NSRect(x: 270, y: 202, width: 64, height: 22)
-        view.addSubview(englishTitle)
-        englishLabelField.frame = NSRect(x: 336, y: 198, width: 48, height: 28)
-        englishLabelField.target = self
-        englishLabelField.action = #selector(labelChanged)
-        view.addSubview(englishLabelField)
-
-        englishBackgroundWell.frame = NSRect(x: 394, y: 198, width: 42, height: 28)
-        englishBackgroundWell.target = self
-        englishBackgroundWell.action = #selector(colorChanged)
-        view.addSubview(englishBackgroundWell)
-
-        englishTextWell.frame = NSRect(x: 446, y: 198, width: 42, height: 28)
-        englishTextWell.target = self
-        englishTextWell.action = #selector(colorChanged)
-        view.addSubview(englishTextWell)
-
+        // ── Labels section (y=158, h=88) ─────────────────────────
+        let labSec = NSView(frame: NSRect(x: 0, y: 158, width: 510, height: 88))
+        let korTitle = NSTextField(labelWithString: "Korean")
+        korTitle.frame = NSRect(x: 26, y: 54, width: 60, height: 20)
+        labSec.addSubview(korTitle)
+        koreanLabelField.frame = NSRect(x: 88, y: 50, width: 48, height: 28)
+        koreanLabelField.target = self; koreanLabelField.action = #selector(labelChanged)
+        labSec.addSubview(koreanLabelField)
+        koreanBackgroundWell.frame = NSRect(x: 142, y: 50, width: 36, height: 28)
+        koreanBackgroundWell.target = self; koreanBackgroundWell.action = #selector(colorChanged)
+        labSec.addSubview(koreanBackgroundWell)
+        koreanTextWell.frame = NSRect(x: 182, y: 50, width: 36, height: 28)
+        koreanTextWell.target = self; koreanTextWell.action = #selector(colorChanged)
+        labSec.addSubview(koreanTextWell)
+        let engTitle = NSTextField(labelWithString: "English")
+        engTitle.frame = NSRect(x: 246, y: 54, width: 60, height: 20)
+        labSec.addSubview(engTitle)
+        englishLabelField.frame = NSRect(x: 308, y: 50, width: 48, height: 28)
+        englishLabelField.target = self; englishLabelField.action = #selector(labelChanged)
+        labSec.addSubview(englishLabelField)
+        englishBackgroundWell.frame = NSRect(x: 362, y: 50, width: 36, height: 28)
+        englishBackgroundWell.target = self; englishBackgroundWell.action = #selector(colorChanged)
+        labSec.addSubview(englishBackgroundWell)
+        englishTextWell.frame = NSRect(x: 402, y: 50, width: 36, height: 28)
+        englishTextWell.target = self; englishTextWell.action = #selector(colorChanged)
+        labSec.addSubview(englishTextWell)
         let colorHelp = NSTextField(labelWithString: "Order: label, background, text")
         colorHelp.textColor = .secondaryLabelColor
         colorHelp.font = NSFont.systemFont(ofSize: 11)
-        colorHelp.frame = NSRect(x: 26, y: 176, width: 280, height: 18)
-        view.addSubview(colorHelp)
+        colorHelp.frame = NSRect(x: 26, y: 24, width: 300, height: 18)
+        labSec.addSubview(colorHelp)
+        labelsSectionView = labSec
+        view.addSubview(labSec)
 
+        // ── Images section (same y=158, h=88, overlapping) ───────
+        let imgSec = NSView(frame: NSRect(x: 0, y: 158, width: 510, height: 88))
+        let korImgTitle = NSTextField(labelWithString: "Korean image")
+        korImgTitle.frame = NSRect(x: 26, y: 64, width: 110, height: 16)
+        imgSec.addSubview(korImgTitle)
+        koreanImageLabel.frame = NSRect(x: 26, y: 46, width: 236, height: 15)
+        koreanImageLabel.font = NSFont.systemFont(ofSize: 10)
+        koreanImageLabel.textColor = .secondaryLabelColor
+        koreanImageLabel.lineBreakMode = .byTruncatingMiddle
+        imgSec.addSubview(koreanImageLabel)
+        let chooseKorBtn = NSButton(title: "Choose...", target: self, action: #selector(chooseKoreanImage))
+        chooseKorBtn.frame = NSRect(x: 268, y: 58, width: 100, height: 26)
+        imgSec.addSubview(chooseKorBtn)
+        let clearKorBtn = NSButton(title: "Clear", target: self, action: #selector(clearKoreanImage))
+        clearKorBtn.frame = NSRect(x: 374, y: 58, width: 60, height: 26)
+        imgSec.addSubview(clearKorBtn)
+        let engImgTitle = NSTextField(labelWithString: "English image")
+        engImgTitle.frame = NSRect(x: 26, y: 26, width: 110, height: 16)
+        imgSec.addSubview(engImgTitle)
+        englishImageLabel.frame = NSRect(x: 26, y: 8, width: 236, height: 15)
+        englishImageLabel.font = NSFont.systemFont(ofSize: 10)
+        englishImageLabel.textColor = .secondaryLabelColor
+        englishImageLabel.lineBreakMode = .byTruncatingMiddle
+        imgSec.addSubview(englishImageLabel)
+        let chooseEngBtn = NSButton(title: "Choose...", target: self, action: #selector(chooseEnglishImage))
+        chooseEngBtn.frame = NSRect(x: 268, y: 20, width: 100, height: 26)
+        imgSec.addSubview(chooseEngBtn)
+        let clearEngBtn = NSButton(title: "Clear", target: self, action: #selector(clearEnglishImage))
+        clearEngBtn.frame = NSRect(x: 374, y: 20, width: 60, height: 26)
+        imgSec.addSubview(clearEngBtn)
+        imagesSectionView = imgSec
+        view.addSubview(imgSec)
+
+        // ── Cursor position ──────────────────────────────────────
         let anchorTitle = NSTextField(labelWithString: "Cursor position")
-        anchorTitle.frame = NSRect(x: 26, y: 142, width: 120, height: 22)
+        anchorTitle.frame = NSRect(x: 26, y: 126, width: 120, height: 22)
         view.addSubview(anchorTitle)
-
         anchorPopup.addItems(withTitles: BadgeAnchor.allCases.map(\.title))
-        anchorPopup.frame = NSRect(x: 146, y: 138, width: 150, height: 28)
-        anchorPopup.target = self
-        anchorPopup.action = #selector(positionChanged)
+        anchorPopup.frame = NSRect(x: 148, y: 122, width: 150, height: 28)
+        anchorPopup.target = self; anchorPopup.action = #selector(positionChanged)
         view.addSubview(anchorPopup)
-
         let offsetTitle = NSTextField(labelWithString: "Offset X/Y")
-        offsetTitle.frame = NSRect(x: 316, y: 142, width: 78, height: 22)
+        offsetTitle.frame = NSRect(x: 310, y: 126, width: 78, height: 22)
         view.addSubview(offsetTitle)
-
-        offsetXField.frame = NSRect(x: 394, y: 138, width: 42, height: 26)
-        offsetXField.target = self
-        offsetXField.action = #selector(positionChanged)
+        offsetXField.frame = NSRect(x: 390, y: 122, width: 42, height: 26)
+        offsetXField.target = self; offsetXField.action = #selector(positionChanged)
         view.addSubview(offsetXField)
-
-        offsetYField.frame = NSRect(x: 442, y: 138, width: 42, height: 26)
-        offsetYField.target = self
-        offsetYField.action = #selector(positionChanged)
+        offsetYField.frame = NSRect(x: 438, y: 122, width: 42, height: 26)
+        offsetYField.target = self; offsetYField.action = #selector(positionChanged)
         view.addSubview(offsetYField)
 
-        let chooseButton = NSButton(title: "Choose Image...", target: self, action: #selector(chooseImage))
-        chooseButton.frame = NSRect(x: 26, y: 90, width: 140, height: 32)
-        view.addSubview(chooseButton)
+        // ── Idle dim delay ───────────────────────────────────────
+        let dimTitleLabel = NSTextField(labelWithString: "Idle dim delay")
+        dimTitleLabel.frame = NSRect(x: 26, y: 96, width: 110, height: 20)
+        view.addSubview(dimTitleLabel)
+        dimDelayField.frame = NSRect(x: 140, y: 92, width: 60, height: 26)
+        dimDelayField.isEditable = true
+        dimDelayField.isBordered = true
+        dimDelayField.bezelStyle = .roundedBezel
+        dimDelayField.target = self
+        dimDelayField.action = #selector(dimDelayChanged)
+        view.addSubview(dimDelayField)
+        let secLbl = NSTextField(labelWithString: "sec  (0.1 – 60)")
+        secLbl.textColor = .secondaryLabelColor
+        secLbl.font = NSFont.systemFont(ofSize: 11)
+        secLbl.frame = NSRect(x: 206, y: 96, width: 130, height: 18)
+        view.addSubview(secLbl)
 
-        let clearButton = NSButton(title: "Clear Image", target: self, action: #selector(clearImage))
-        clearButton.frame = NSRect(x: 178, y: 90, width: 110, height: 32)
-        view.addSubview(clearButton)
-
-        imagePathLabel.frame = NSRect(x: 26, y: 60, width: 455, height: 22)
-        imagePathLabel.lineBreakMode = .byTruncatingMiddle
-        view.addSubview(imagePathLabel)
-
-        view.addSubview(helpText(
-            "Cursor position sets where the badge sits around the cursor. X/Y offsets fine-tune the distance. The selected image is used as the badge background.",
-            x: 26,
-            y: 12,
-            width: 440,
-            height: 40
-        ))
+        // ── BlackCat Mode ────────────────────────────────────────
+        blackCatCheckbox.frame = NSRect(x: 26, y: 64, width: 470, height: 20)
+        blackCatCheckbox.target = self; blackCatCheckbox.action = #selector(blackCatModeChanged)
+        view.addSubview(blackCatCheckbox)
+        let chooseCatBtn = NSButton(title: "Choose Cat GIF...", target: self, action: #selector(chooseBlackCatGif))
+        chooseCatBtn.frame = NSRect(x: 26, y: 34, width: 150, height: 26)
+        view.addSubview(chooseCatBtn)
+        let clearCatBtn = NSButton(title: "Clear", target: self, action: #selector(clearBlackCatGif))
+        clearCatBtn.frame = NSRect(x: 182, y: 34, width: 54, height: 26)
+        view.addSubview(clearCatBtn)
+        blackCatGifLabel.frame = NSRect(x: 26, y: 14, width: 420, height: 16)
+        blackCatGifLabel.font = NSFont.systemFont(ofSize: 10)
+        blackCatGifLabel.textColor = .secondaryLabelColor
+        blackCatGifLabel.lineBreakMode = .byTruncatingMiddle
+        view.addSubview(blackCatGifLabel)
 
         return view
     }
@@ -479,7 +771,7 @@ private final class SettingsWindowController: NSWindowController {
 
     private func aboutView() -> NSView {
         let view = NSView(frame: NSRect(x: 0, y: 0, width: 510, height: 340))
-        addHeader("HanAIndicator \(appVersion)", to: view, y: 292)
+        addHeader("Caticator \(appVersion)", to: view, y: 292)
 
         view.addSubview(helpText(
             """
@@ -526,8 +818,23 @@ private final class SettingsWindowController: NSWindowController {
 
     @objc private func sizeChanged() {
         let value = CGFloat(sizeSlider.doubleValue.rounded())
-        sizeValueLabel.stringValue = "\(Int(value)) px"
+        sizeValueLabel.stringValue = "\(Int(value))"
         appDelegate.setBadgeSize(value)
+    }
+
+    @objc private func sizeFieldChanged() {
+        let raw = CGFloat(Double(sizeValueLabel.stringValue) ?? Double(appDelegate.badgeSize))
+        let clamped = max(14, min(72, raw)).rounded()
+        sizeSlider.doubleValue = Double(clamped)
+        sizeValueLabel.stringValue = "\(Int(clamped))"
+        appDelegate.setBadgeSize(clamped)
+    }
+
+    @objc private func dimDelayChanged() {
+        let raw = Double(dimDelayField.stringValue) ?? appDelegate.idleDimDelay
+        let clamped = max(0.1, min(60, raw))
+        dimDelayField.stringValue = String(format: "%.1f", clamped)
+        appDelegate.setIdleDimDelay(clamped)
     }
 
     @objc private func labelChanged() {
@@ -570,7 +877,72 @@ private final class SettingsWindowController: NSWindowController {
 
     @objc private func clearImage() {
         appDelegate.setCustomImagePath("")
-        imagePathLabel.stringValue = "No custom image selected"
+    }
+
+    @objc private func modeChanged() {
+        let mode = labelsRadio.state == .on ? "labels" : "images"
+        imagesRadio.state = mode == "images" ? .on : .off
+        labelsRadio.state = mode == "labels" ? .on : .off
+        updateSectionVisibility(mode: mode)
+        appDelegate.setBadgeDisplayMode(mode)
+    }
+
+    @objc private func chooseKoreanImage() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose Korean Badge Image"
+        panel.allowedContentTypes = [.png, .jpeg, .gif, .tiff, .bmp, .heic]
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK, let url = panel.url {
+            appDelegate.setKoreanImagePath(url.path)
+            koreanImageLabel.stringValue = url.path
+        }
+    }
+
+    @objc private func clearKoreanImage() {
+        appDelegate.setKoreanImagePath("")
+        koreanImageLabel.stringValue = "No image selected"
+    }
+
+    @objc private func chooseEnglishImage() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose English Badge Image"
+        panel.allowedContentTypes = [.png, .jpeg, .gif, .tiff, .bmp, .heic]
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK, let url = panel.url {
+            appDelegate.setEnglishImagePath(url.path)
+            englishImageLabel.stringValue = url.path
+        }
+    }
+
+    @objc private func clearEnglishImage() {
+        appDelegate.setEnglishImagePath("")
+        englishImageLabel.stringValue = "No image selected"
+    }
+
+    @objc private func flipHChanged() {
+        appDelegate.setFlipHorizontal(flipHCheckbox.state == .on)
+    }
+
+    @objc private func blackCatModeChanged() {
+        appDelegate.setBlackCatMode(blackCatCheckbox.state == .on)
+    }
+
+    @objc private func chooseBlackCatGif() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose BlackCat GIF"
+        // UTType 필터 없이 모든 파일 표시 — 일부 GIF가 UTType 메타 없으면 필터에서 숨겨짐
+        panel.allowedContentTypes = []
+        panel.allowsOtherFileTypes = true
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK, let url = panel.url {
+            appDelegate.setBlackCatGifPath(url.path)
+            blackCatGifLabel.stringValue = url.lastPathComponent
+        }
+    }
+
+    @objc private func clearBlackCatGif() {
+        appDelegate.setBlackCatGifPath("")
+        blackCatGifLabel.stringValue = "Built-in GIF (no override)"
     }
 
     @objc private func resetOptions() {
@@ -580,6 +952,26 @@ private final class SettingsWindowController: NSWindowController {
 
     @objc private func openAccessibilitySettings() {
         appDelegate.openAccessibilitySettings()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.refresh() }
+    }
+
+    @objc private func requestAXPermission() {
+        appDelegate.promptAccessibilityPermission()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.refresh() }
+    }
+
+    @objc private func diagnoseAX() {
+        let report = appDelegate.runAXDiagnostic()
+        let alert = NSAlert()
+        alert.messageText = "AX / Caret Detection Diagnostic"
+        alert.informativeText = report + "\n\n━━━━━━━━━━━━\n파일 디버그 시작: Settings 닫고 텍스트 필드 클릭 후 5초 기다리면\n~/Desktop/hana_caret_debug.txt 에 결과 저장됩니다."
+        alert.addButton(withTitle: "OK + 파일 디버그 시작")
+        alert.addButton(withTitle: "닫기")
+        alert.alertStyle = .informational
+        if alert.runModal() == .alertFirstButtonReturn {
+            appDelegate.startCaretDebug()
+        }
+        refresh()
     }
 
     @objc private func openProjectFolder() {
@@ -594,13 +986,21 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var timer: Timer?
     private var mouseMonitor: Any?
     private var localMouseMonitor: Any?
+    private var keyMonitor: Any?
     private var hideAt = Date.distantFuture
     fileprivate var keepVisible = true
     fileprivate var preferCaret = true
     fileprivate var badgeSize: CGFloat = defaultBadgeSize
     fileprivate var koreanLabel = "한"
     fileprivate var englishLabel = "A"
+    fileprivate var idleDimDelay: TimeInterval = 2.0
+    fileprivate var flipHorizontal = false
     fileprivate var customImagePath = ""
+    fileprivate var badgeDisplayMode = "labels"
+    fileprivate var blackCatMode = false
+    fileprivate var blackCatGifPath = ""
+    fileprivate var koreanImagePath = ""
+    fileprivate var englishImagePath = ""
     fileprivate var anchor: BadgeAnchor = .bottomRight
     fileprivate var offsetX: CGFloat = 18
     fileprivate var offsetY: CGFloat = -32
@@ -615,10 +1015,14 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cachedIsKorean = false
     private var cachedSourceID = ""
     private var lastCaretPoint: CGPoint?
+    private var lastCaretCheck = Date.distantPast  // AX 쿼리 스로틀용
+    private var lastBadgeSource = ""   // 로그용: "caret" / "lastCaret" / "mouse"
     private var lastMouseActivity = Date()
+    private var lastTypingActivity = Date()
     private var isDimmed = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        log.info("HanAIndicator launched")
         NSApp.setActivationPolicy(.accessory)
         loadOptions()
         buildMenu()
@@ -640,7 +1044,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildMenu() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "한A"
+        item.button?.image = menuBarImage()
+        item.button?.title = ""
 
         let menu = NSMenu()
         menu.addItem(NSMenuItem(
@@ -649,7 +1054,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             keyEquivalent: ","
         ))
         menu.addItem(NSMenuItem(
-            title: "Version \(appVersion)",
+            title: "Caticator v\(appVersion)",
             action: nil,
             keyEquivalent: ""
         ))
@@ -660,12 +1065,51 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             keyEquivalent: ""
         ))
         menu.addItem(NSMenuItem(
-            title: "Quit HanAIndicator",
+            title: "Quit Caticator",
             action: #selector(quit),
             keyEquivalent: "q"
         ))
         item.menu = menu
         statusItem = item
+    }
+
+    // GIF 첫 프레임 → 메뉴바 템플릿 아이콘 (18pt)
+    private func menuBarImage() -> NSImage? {
+        let src: CGImageSource?
+        if !blackCatGifPath.isEmpty,
+           let gifSrc = CGImageSourceCreateWithURL(URL(fileURLWithPath: blackCatGifPath) as CFURL, nil) {
+            src = gifSrc
+        } else if let data = Data(base64Encoded: embeddedBlackCatGif) {
+            src = CGImageSourceCreateWithData(data as CFData, nil)
+        } else {
+            src = nil
+        }
+        guard let imgSrc = src,
+              let cgImage = CGImageSourceCreateImageAtIndex(imgSrc, 0, nil) else { return nil }
+
+        let side = 18
+        guard let ctx = CGContext(
+            data: nil, width: side, height: side,
+            bitsPerComponent: 8, bytesPerRow: side * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        // Y 반전 (CGImage top-left → CG bottom-left)
+        ctx.translateBy(x: 0, y: CGFloat(side))
+        ctx.scaleBy(x: 1, y: -1)
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: side, height: side))
+
+        guard let data = ctx.data else { return nil }
+        let buf = data.bindMemory(to: UInt8.self, capacity: side * side * 4)
+        for i in 0..<(side * side) {
+            let r = buf[i*4], g = buf[i*4+1], b = buf[i*4+2]
+            if r > 160 && g > 160 && b > 160 { buf[i*4+3] = 0 }
+        }
+        guard let result = ctx.makeImage() else { return nil }
+        let img = NSImage(cgImage: result, size: NSSize(width: side, height: side))
+        img.isTemplate = true
+        return img
     }
 
     private func loadOptions() {
@@ -677,17 +1121,24 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             SettingKey.englishLabel: "A",
             SettingKey.customImagePath: "",
             SettingKey.anchor: BadgeAnchor.bottomRight.rawValue,
-            SettingKey.offsetX: 18.0,
-            SettingKey.offsetY: -32.0,
+            SettingKey.offsetX: 8.0,
+            SettingKey.offsetY: -10.0,
             SettingKey.koreanBackgroundColor: defaultKoreanBackground,
             SettingKey.koreanTextColor: defaultKoreanText,
             SettingKey.englishBackgroundColor: defaultEnglishBackground,
-            SettingKey.englishTextColor: defaultEnglishText
+            SettingKey.englishTextColor: defaultEnglishText,
+            SettingKey.idleDimDelay: 2.0,
+            SettingKey.flipHorizontal: false,
+            SettingKey.badgeDisplayMode: "labels",
+            SettingKey.blackCatMode: false,
+            SettingKey.blackCatGifPath: "",
+            SettingKey.koreanImagePath: "",
+            SettingKey.englishImagePath: ""
         ])
         keepVisible = UserDefaults.standard.bool(forKey: SettingKey.keepVisible)
         preferCaret = UserDefaults.standard.bool(forKey: SettingKey.preferCaret)
         badgeSize = CGFloat(UserDefaults.standard.double(forKey: SettingKey.badgeSize))
-        if badgeSize < 24 || badgeSize > 72 {
+        if badgeSize < 14 || badgeSize > 72 {
             badgeSize = defaultBadgeSize
             UserDefaults.standard.set(Double(badgeSize), forKey: SettingKey.badgeSize)
         }
@@ -702,6 +1153,14 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         koreanTextColor = colorSetting(SettingKey.koreanTextColor, fallback: defaultKoreanText)
         englishBackgroundColor = colorSetting(SettingKey.englishBackgroundColor, fallback: defaultEnglishBackground)
         englishTextColor = colorSetting(SettingKey.englishTextColor, fallback: defaultEnglishText)
+        let rawDelay = UserDefaults.standard.double(forKey: SettingKey.idleDimDelay)
+        idleDimDelay = rawDelay > 0 ? max(0.1, min(60, rawDelay)) : 2.0
+        flipHorizontal = UserDefaults.standard.bool(forKey: SettingKey.flipHorizontal)
+        badgeDisplayMode = UserDefaults.standard.string(forKey: SettingKey.badgeDisplayMode) ?? "labels"
+        blackCatMode = UserDefaults.standard.bool(forKey: SettingKey.blackCatMode)
+        blackCatGifPath = UserDefaults.standard.string(forKey: SettingKey.blackCatGifPath) ?? ""
+        koreanImagePath = UserDefaults.standard.string(forKey: SettingKey.koreanImagePath) ?? ""
+        englishImagePath = UserDefaults.standard.string(forKey: SettingKey.englishImagePath) ?? ""
     }
 
     private func saveOptions() {
@@ -718,19 +1177,60 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(koreanTextColor.hexString, forKey: SettingKey.koreanTextColor)
         UserDefaults.standard.set(englishBackgroundColor.hexString, forKey: SettingKey.englishBackgroundColor)
         UserDefaults.standard.set(englishTextColor.hexString, forKey: SettingKey.englishTextColor)
+        UserDefaults.standard.set(idleDimDelay, forKey: SettingKey.idleDimDelay)
+        UserDefaults.standard.set(flipHorizontal, forKey: SettingKey.flipHorizontal)
+        UserDefaults.standard.set(badgeDisplayMode, forKey: SettingKey.badgeDisplayMode)
+        UserDefaults.standard.set(blackCatMode, forKey: SettingKey.blackCatMode)
+        UserDefaults.standard.set(blackCatGifPath, forKey: SettingKey.blackCatGifPath)
+        UserDefaults.standard.set(koreanImagePath, forKey: SettingKey.koreanImagePath)
+        UserDefaults.standard.set(englishImagePath, forKey: SettingKey.englishImagePath)
     }
 
     private func applyAppearanceOptions() {
-        window.applyBadgeSize(badgeSize)
+        window.badgeView.stopGIFAnimation()
+        window.badgeView.gifFrames = []
+        window.badgeView.badgeImage = nil
+        window.badgeView.koreanBadgeImage = nil
+        window.badgeView.englishBadgeImage = nil
+
+        if blackCatMode {
+            log.info("applyAppearanceOptions: blackCatMode, gifPath='\(self.blackCatGifPath)'")
+            if !blackCatGifPath.isEmpty {
+                window.badgeView.loadGIF(from: URL(fileURLWithPath: blackCatGifPath))
+            }
+            // 로딩 실패했거나 경로 없으면 내장 GIF 사용
+            if window.badgeView.gifFrames.isEmpty {
+                log.info("applyAppearanceOptions: using embedded GIF")
+                if let data = Data(base64Encoded: embeddedBlackCatGif) {
+                    window.badgeView.loadGIF(from: data)
+                }
+            }
+            window.applyBadgeSize(badgeSize, imageMode: true)
+        } else if badgeDisplayMode == "images" {
+            if !koreanImagePath.isEmpty {
+                let kPath = koreanImagePath
+                if kPath.lowercased().hasSuffix(".gif") {
+                    window.badgeView.loadGIF(from: URL(fileURLWithPath: kPath))
+                } else {
+                    window.badgeView.koreanBadgeImage = NSImage(contentsOfFile: kPath)
+                }
+            }
+            if !englishImagePath.isEmpty {
+                window.badgeView.englishBadgeImage = NSImage(contentsOfFile: englishImagePath)
+            }
+            let hasAny = !koreanImagePath.isEmpty || !englishImagePath.isEmpty
+            window.applyBadgeSize(badgeSize, imageMode: hasAny)
+        } else {
+            window.applyBadgeSize(badgeSize, imageMode: false)
+        }
+
+        window.badgeView.flipHorizontal = flipHorizontal
+        // 메뉴바 아이콘 동기화
+        statusItem?.button?.image = menuBarImage()
         window.badgeView.koreanBackgroundColor = koreanBackgroundColor
         window.badgeView.koreanTextColor = koreanTextColor
         window.badgeView.englishBackgroundColor = englishBackgroundColor
         window.badgeView.englishTextColor = englishTextColor
-        if !customImagePath.isEmpty, let image = NSImage(contentsOfFile: customImagePath) {
-            window.badgeView.badgeImage = image
-        } else {
-            window.badgeView.badgeImage = nil
-        }
         window.badgeView.needsDisplay = true
     }
 
@@ -750,24 +1250,113 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func installMouseMonitors() {
         mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged]) { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.fastMouseUpdate()
-            }
+            DispatchQueue.main.async { self?.fastMouseUpdate() }
         }
         localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged]) { [weak self] event in
             self?.fastMouseUpdate()
             return event
         }
+        // preferCaret 모드 딤 기준: 타이핑 여부 감지
+        keyMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown]) { [weak self] _ in
+            DispatchQueue.main.async { self?.markTypingActive() }
+        }
     }
 
     private func askForAccessibilityIfNeeded() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        _ = AXIsProcessTrustedWithOptions(options)
+        let trusted = AXIsProcessTrustedWithOptions(options)
+        log.info("AX trusted on launch: \(trusted)")
+        if !trusted {
+            log.warning("AX not granted — caretPoint() will return nil. Go to System Settings > Privacy > Accessibility and add HanAIndicator.")
+        }
+    }
+
+    fileprivate func runAXDiagnostic() -> String {
+        var lines: [String] = []
+
+        let trusted = AXIsProcessTrusted()
+        lines.append("AX trusted: \(trusted ? "✅ YES" : "❌ NO")")
+
+        guard trusted else {
+            lines.append("")
+            lines.append("⚠️  접근성 권한이 없습니다.")
+            lines.append("아래 버튼으로 권한을 요청하거나")
+            lines.append("System Settings > Privacy > Accessibility")
+            lines.append("에서 HanAIndicator를 직접 추가하세요.")
+            return lines.joined(separator: "\n")
+        }
+
+        guard let app = NSWorkspace.shared.frontmostApplication else {
+            lines.append("Frontmost app: none"); return lines.joined(separator: "\n")
+        }
+        lines.append("Frontmost: \(app.localizedName ?? "?") (pid \(app.processIdentifier))")
+
+        // 시스템 전체 포커스
+        let sysWide = AXUIElementCreateSystemWide()
+        var sysRef: CFTypeRef?
+        let r0 = AXUIElementCopyAttributeValue(sysWide, kAXFocusedUIElementAttribute as CFString, &sysRef)
+        lines.append("SystemWide focused: \(r0 == .success ? "✅" : "❌ err=\(r0.rawValue)")")
+
+        let appEl = AXUIElementCreateApplication(app.processIdentifier)
+        var appRef: CFTypeRef?
+        let r1 = AXUIElementCopyAttributeValue(appEl, kAXFocusedUIElementAttribute as CFString, &appRef)
+        lines.append("App focused element: \(r1 == .success ? "✅" : "❌ err=\(r1.rawValue)")")
+
+        guard r1 == .success, let el = appRef as! AXUIElement? else {
+            lines.append("→ 텍스트 필드에 커서를 놓은 뒤 다시 진단하세요")
+            return lines.joined(separator: "\n")
+        }
+
+        var roleRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &roleRef)
+        lines.append("Role: \(roleRef as? String ?? "nil")")
+
+        var rangeRef: CFTypeRef?
+        let r2 = AXUIElementCopyAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, &rangeRef)
+        lines.append("SelectedTextRange: \(r2 == .success ? "✅" : "❌ err=\(r2.rawValue)")")
+
+        if r2 == .success, let rv = rangeRef as! AXValue? {
+            var range = CFRange()
+            AXValueGetValue(rv, .cfRange, &range)
+            lines.append("Range: loc=\(range.location) len=\(range.length)")
+
+            let testLoc = range.location > 0 ? range.location - 1 : 0
+            var testRange = CFRange(location: testLoc, length: 1)
+            if let axRange = AXValueCreate(.cfRange, &testRange) {
+                var boundsRef: CFTypeRef?
+                let r3 = AXUIElementCopyParameterizedAttributeValue(
+                    el, kAXBoundsForRangeParameterizedAttribute as CFString, axRange, &boundsRef)
+                lines.append("BoundsForRange: \(r3 == .success ? "✅" : "❌ err=\(r3.rawValue)")")
+                if r3 == .success, let bv = boundsRef as! AXValue? {
+                    var rect = CGRect.zero
+                    AXValueGetValue(bv, .cgRect, &rect)
+                    let h = NSScreen.screens.first?.frame.height ?? 900
+                    lines.append("AX rect: (\(Int(rect.midX)), \(Int(rect.midY)))")
+                    lines.append("✅ AppKit 변환: (\(Int(rect.midX)), \(Int(h - rect.midY)))")
+                }
+            }
+        } else {
+            lines.append("→ 이 앱/요소는 SelectedTextRange를 지원 안 함")
+            lines.append("   (브라우저 일부, 게임 등은 지원 안 할 수 있음)")
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    fileprivate func promptAccessibilityPermission() {
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        let trusted = AXIsProcessTrustedWithOptions(options)
+        log.info("promptAccessibilityPermission: trusted=\(trusted)")
     }
 
     @objc private func tick() {
         refreshInputSourceIfNeeded(force: false)
         updateIdleOpacity()
+
+        if blackCatMode && !cachedIsKorean {
+            window.orderOut(nil)
+            return
+        }
 
         guard keepVisible || Date() < hideAt else {
             window.orderOut(nil)
@@ -775,7 +1364,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if preferCaret {
-            moveBadge(near: caretPoint() ?? lastCaretPoint ?? mousePoint())
+            moveBadge(near: throttledCaretPoint() ?? mousePoint())
         } else {
             moveBadge(near: mousePoint())
         }
@@ -786,6 +1375,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func inputSourceChanged() {
         hideAt = Date().addingTimeInterval(2.0)
+        lastCaretCheck = Date.distantPast  // 입력 소스 전환 시 즉시 AX 쿼리
         refreshInputSourceIfNeeded(force: true)
         tick()
     }
@@ -817,12 +1407,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func fastMouseUpdate() {
         markMouseActive()
-        guard !preferCaret else {
-            return
-        }
-        guard keepVisible || Date() < hideAt else {
-            return
-        }
+        guard !preferCaret else { return }
+        guard !(blackCatMode && !cachedIsKorean) else { return }
+        guard keepVisible || Date() < hideAt else { return }
         moveBadge(near: mousePoint())
         if !window.isVisible {
             window.orderFrontRegardless()
@@ -831,28 +1418,38 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func markMouseActive() {
         lastMouseActivity = Date()
-        guard isDimmed || window.alphaValue < activeBadgeOpacity else {
-            return
-        }
+        guard isDimmed || window.alphaValue < activeBadgeOpacity else { return }
         isDimmed = false
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.12
-            window.animator().alphaValue = activeBadgeOpacity
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.12
+            self.window.animator().alphaValue = activeBadgeOpacity
+        }
+    }
+
+    private func markTypingActive() {
+        lastTypingActivity = Date()
+        guard preferCaret else { return }
+        guard isDimmed || window.alphaValue < activeBadgeOpacity else { return }
+        isDimmed = false
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.12
+            self.window.animator().alphaValue = activeBadgeOpacity
         }
     }
 
     private func updateIdleOpacity() {
-        guard window.isVisible else {
-            return
-        }
-        let shouldDim = Date().timeIntervalSince(lastMouseActivity) >= idleDimDelay
-        guard shouldDim != isDimmed else {
-            return
-        }
+        guard window.isVisible else { return }
+        // preferCaret 모드: 타이핑 멈춘 뒤 지정 시간 → dim
+        // 일반 모드:       마우스 멈춘 뒤 지정 시간 → dim
+        let elapsed = preferCaret
+            ? Date().timeIntervalSince(lastTypingActivity)
+            : Date().timeIntervalSince(lastMouseActivity)
+        let shouldDim = elapsed >= idleDimDelay
+        guard shouldDim != isDimmed else { return }
         isDimmed = shouldDim
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.18
-            window.animator().alphaValue = shouldDim ? idleBadgeOpacity : activeBadgeOpacity
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.18
+            self.window.animator().alphaValue = shouldDim ? idleBadgeOpacity : activeBadgeOpacity
         }
     }
 
@@ -926,20 +1523,69 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    fileprivate func setIdleDimDelay(_ value: TimeInterval) {
+        idleDimDelay = max(0.1, min(60, value))
+        saveOptions()
+    }
+
+    fileprivate func setFlipHorizontal(_ value: Bool) {
+        flipHorizontal = value
+        saveOptions()
+        window.badgeView.flipHorizontal = value
+        window.badgeView.needsDisplay = true
+    }
+
+    fileprivate func setBadgeDisplayMode(_ mode: String) {
+        badgeDisplayMode = mode
+        saveOptions()
+        applyAppearanceOptions()
+    }
+
+    fileprivate func setBlackCatMode(_ value: Bool) {
+        blackCatMode = value
+        saveOptions()
+        applyAppearanceOptions()
+    }
+
+    fileprivate func setBlackCatGifPath(_ path: String) {
+        blackCatGifPath = path
+        saveOptions()
+        applyAppearanceOptions()
+    }
+
+    fileprivate func setKoreanImagePath(_ path: String) {
+        koreanImagePath = path
+        saveOptions()
+        applyAppearanceOptions()
+    }
+
+    fileprivate func setEnglishImagePath(_ path: String) {
+        englishImagePath = path
+        saveOptions()
+        applyAppearanceOptions()
+    }
+
     fileprivate func resetOptions() {
         keepVisible = true
         preferCaret = true
         badgeSize = defaultBadgeSize
+        idleDimDelay = 2.0
+        flipHorizontal = false
         koreanLabel = "한"
         englishLabel = "A"
         customImagePath = ""
+        badgeDisplayMode = "labels"
+        blackCatMode = false
+        blackCatGifPath = ""
+        koreanImagePath = ""
+        englishImagePath = ""
         koreanBackgroundColor = NSColor(hex: defaultKoreanBackground)!
         koreanTextColor = NSColor(hex: defaultKoreanText)!
         englishBackgroundColor = NSColor(hex: defaultEnglishBackground)!
         englishTextColor = NSColor(hex: defaultEnglishText)!
         anchor = .bottomRight
-        offsetX = 18
-        offsetY = -32
+        offsetX = 8
+        offsetY = -10
         saveOptions()
         applyAppearanceOptions()
     }
@@ -951,12 +1597,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func quit() {
-        if let mouseMonitor {
-            NSEvent.removeMonitor(mouseMonitor)
-        }
-        if let localMouseMonitor {
-            NSEvent.removeMonitor(localMouseMonitor)
-        }
+        if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
+        if let localMouseMonitor { NSEvent.removeMonitor(localMouseMonitor) }
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         NSApp.terminate(nil)
     }
 
@@ -1006,52 +1649,129 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         return location
     }
 
+    // AX 쿼리를 최대 0.3초에 1번으로 제한 — 웹브라우저 메인스레드 차단 방지
+    private func throttledCaretPoint() -> CGPoint? {
+        let now = Date()
+        if now.timeIntervalSince(lastCaretCheck) >= 0.3 {
+            lastCaretCheck = now
+            if let p = caretPoint() {
+                if lastBadgeSource != "caret" {
+                    lastBadgeSource = "caret"
+                    log.info("badge source → CARET (\(Int(p.x)), \(Int(p.y)))")
+                }
+                return p
+            } else {
+                if lastBadgeSource != "mouse" {
+                    lastBadgeSource = "mouse"
+                    log.info("badge source → MOUSE (caret unavailable)")
+                }
+                lastCaretPoint = nil
+                return nil
+            }
+        }
+        // 스로틀 구간: 캐시된 위치 재사용
+        return lastCaretPoint
+    }
+
+    private var caretDebugEnabled = false
+    private var caretDebugLines: [String] = []
+
+    private func dbg(_ s: String) {
+        guard caretDebugEnabled else { return }
+        caretDebugLines.append(s)
+    }
+
+    fileprivate func startCaretDebug() {
+        caretDebugEnabled = true
+        caretDebugLines = ["=== Caret Debug (5초) ===", "Time: \(Date())"]
+        lastCaretCheck = Date.distantPast
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self = self else { return }
+            self.caretDebugEnabled = false
+            let text = self.caretDebugLines.joined(separator: "\n")
+            let path = NSHomeDirectory() + "/Desktop/hana_caret_debug.txt"
+            try? text.write(toFile: path, atomically: true, encoding: .utf8)
+        }
+    }
+
     private func caretPoint() -> CGPoint? {
-        guard AXIsProcessTrusted() else {
-            return nil
-        }
+        let trusted = AXIsProcessTrusted()
+        dbg("AX trusted: \(trusted)")
+        guard trusted else { return nil }
 
+        let appName = NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"
+        dbg("Frontmost: \(appName)")
+
+        // 시스템 전체 포커스
         let systemWide = AXUIElementCreateSystemWide()
-        if let focusedElement = axElement(systemWide, kAXFocusedUIElementAttribute),
-           let point = caretPoint(in: focusedElement) {
-            lastCaretPoint = point
-            return point
+        var sysRef: CFTypeRef?
+        let r0 = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &sysRef)
+        dbg("SystemWide focused: result=\(r0.rawValue)")
+
+        if r0 == .success, let el = sysRef {
+            let focused = el as! AXUIElement
+            var roleRef: CFTypeRef?
+            AXUIElementCopyAttributeValue(focused, kAXRoleAttribute as CFString, &roleRef)
+            dbg("  Role: \(roleRef as? String ?? "nil")")
+            if let point = caretPoint(in: focused) {
+                lastCaretPoint = point
+                dbg("  ✅ Caret: AppKit(\(Int(point.x)), \(Int(point.y)))")
+                return point
+            }
+            dbg("  ❌ caretPoint(in:) returned nil")
         }
 
-        guard let app = NSWorkspace.shared.frontmostApplication else {
+        // 앱 레벨 폴백
+        guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
+        let appEl = AXUIElementCreateApplication(app.processIdentifier)
+        var appRef: CFTypeRef?
+        let r1 = AXUIElementCopyAttributeValue(appEl, kAXFocusedUIElementAttribute as CFString, &appRef)
+        dbg("App focused: result=\(r1.rawValue)")
+        guard r1 == .success, let el = appRef else {
+            dbg("  ❌ no focused element")
             return nil
         }
+        let focused = el as! AXUIElement
+        var roleRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(focused, kAXRoleAttribute as CFString, &roleRef)
+        dbg("  Role: \(roleRef as? String ?? "nil")")
 
-        let appElement = AXUIElementCreateApplication(app.processIdentifier)
-        var focusedValue: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
-            appElement,
-            kAXFocusedUIElementAttribute as CFString,
-            &focusedValue
-        ) == .success else {
-            return nil
-        }
-
-        let focusedElement = focusedValue as! AXUIElement
-        if let point = caretPoint(in: focusedElement) {
+        if let point = caretPoint(in: focused) {
             lastCaretPoint = point
+            dbg("  ✅ Caret (app fallback): AppKit(\(Int(point.x)), \(Int(point.y)))")
             return point
         }
-
+        dbg("  ❌ app caretPoint(in:) returned nil")
         return nil
     }
 
+    // AX API는 top-left origin (y↓), AppKit은 bottom-left origin (y↑) — Y축 반전 필요
+    private func axToAppKit(_ axPoint: CGPoint) -> CGPoint {
+        let h = NSScreen.screens.first?.frame.height ?? NSScreen.main?.frame.height ?? 900
+        return CGPoint(x: axPoint.x, y: h - axPoint.y)
+    }
+
     private func caretPoint(in focusedElement: AXUIElement) -> CGPoint? {
-        if let textElement = bestTextElement(from: focusedElement),
-           let rect = selectedTextRect(textElement) {
-            return CGPoint(x: rect.midX, y: rect.midY)
-        }
+        let textEl = bestTextElement(from: focusedElement)
+        dbg("    bestTextElement: \(textEl == nil ? "nil" : "found")")
+        guard let textElement = textEl else { return nil }
 
-        if let textElement = bestTextElement(from: focusedElement),
-           let rect = elementRect(textElement) {
-            return CGPoint(x: rect.minX, y: rect.maxY)
-        }
+        var roleRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(textElement, kAXRoleAttribute as CFString, &roleRef)
+        dbg("    textEl role: \(roleRef as? String ?? "nil")")
 
+        if let rect = selectedTextRect(textElement) {
+            let pt = axToAppKit(CGPoint(x: rect.midX, y: rect.midY))
+            dbg("    ✅ selectionRect → AppKit(\(Int(pt.x)),\(Int(pt.y)))")
+            return pt
+        }
+        dbg("    selectedTextRect=nil → elementRect 시도")
+        if let rect = elementRect(textElement) {
+            let pt = axToAppKit(CGPoint(x: rect.minX, y: rect.minY))
+            dbg("    ⚠️ elementRect fallback → AppKit(\(Int(pt.x)),\(Int(pt.y)))")
+            return pt
+        }
+        dbg("    ❌ elementRect=nil")
         return nil
     }
 
@@ -1239,8 +1959,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func moveBadge(near point: CGPoint) {
-        let screenFrame = NSScreen.screens.first(where: { $0.frame.contains(point) })?.visibleFrame
-            ?? NSScreen.main?.visibleFrame
+        // visibleFrame 대신 frame 사용 — 메뉴바·Dock 영역에도 배지 표시 허용
+        let screenFrame = NSScreen.screens.first(where: { $0.frame.contains(point) })?.frame
+            ?? NSScreen.main?.frame
             ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
 
         let size = window.frame.size
@@ -1257,8 +1978,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         case .centered:
             origin = CGPoint(x: point.x + offsetX - size.width / 2, y: point.y + offsetY - size.height / 2)
         }
-        origin.x = max(screenFrame.minX + 6, min(origin.x, screenFrame.maxX - size.width - 6))
-        origin.y = max(screenFrame.minY + 6, min(origin.y, screenFrame.maxY - size.height - 6))
+        // 화면 완전 밖으로 나가는 것만 방지 (메뉴바·Dock 영역 이동 허용)
+        origin.x = max(screenFrame.minX - size.width / 2, min(origin.x, screenFrame.maxX - size.width / 2))
+        origin.y = max(screenFrame.minY - size.height / 2, min(origin.y, screenFrame.maxY - size.height / 2))
         window.setFrameOrigin(origin)
     }
 }
