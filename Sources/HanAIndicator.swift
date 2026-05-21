@@ -399,6 +399,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var settingsWindowController: SettingsWindowController?
     private var timer: Timer?
+    private var mouseMonitor: Any?
+    private var localMouseMonitor: Any?
     private var hideAt = Date.distantFuture
     fileprivate var keepVisible = true
     fileprivate var preferCaret = true
@@ -408,6 +410,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     fileprivate var customImagePath = ""
     private var lastLabel = ""
     private var lastInputSourceID = ""
+    private var lastInputCheck = Date.distantPast
+    private var cachedLabel = "A"
+    private var cachedIsKorean = false
+    private var cachedSourceID = ""
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -417,8 +423,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         observeInputSourceChanges()
         askForAccessibilityIfNeeded()
 
+        installMouseMonitors()
+
         timer = Timer.scheduledTimer(
-            timeInterval: 0.12,
+            timeInterval: 0.04,
             target: self,
             selector: #selector(tick),
             userInfo: nil,
@@ -502,24 +510,25 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
+    private func installMouseMonitors() {
+        mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged]) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.fastMouseUpdate()
+            }
+        }
+        localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged]) { [weak self] event in
+            self?.fastMouseUpdate()
+            return event
+        }
+    }
+
     private func askForAccessibilityIfNeeded() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
     }
 
     @objc private func tick() {
-        let current = currentInputLabel()
-        if current.label != lastLabel {
-            lastLabel = current.label
-            hideAt = Date().addingTimeInterval(1.8)
-        }
-        if current.sourceID != lastInputSourceID {
-            lastInputSourceID = current.sourceID
-            hideAt = Date().addingTimeInterval(1.8)
-        }
-
-        window.badgeView.label = current.label
-        window.badgeView.isKoreanInput = current.isKorean
+        refreshInputSourceIfNeeded(force: false)
 
         guard keepVisible || Date() < hideAt else {
             window.orderOut(nil)
@@ -535,7 +544,46 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func inputSourceChanged() {
         hideAt = Date().addingTimeInterval(2.0)
+        refreshInputSourceIfNeeded(force: true)
         tick()
+    }
+
+    private func refreshInputSourceIfNeeded(force: Bool) {
+        let now = Date()
+        guard force || now.timeIntervalSince(lastInputCheck) > 0.30 else {
+            return
+        }
+        lastInputCheck = now
+
+        let current = currentInputLabel()
+        cachedLabel = current.label
+        cachedIsKorean = current.isKorean
+        cachedSourceID = current.sourceID
+
+        if current.label != lastLabel {
+            lastLabel = current.label
+            hideAt = now.addingTimeInterval(1.8)
+        }
+        if current.sourceID != lastInputSourceID {
+            lastInputSourceID = current.sourceID
+            hideAt = now.addingTimeInterval(1.8)
+        }
+
+        window.badgeView.label = cachedLabel
+        window.badgeView.isKoreanInput = cachedIsKorean
+    }
+
+    private func fastMouseUpdate() {
+        guard !preferCaret else {
+            return
+        }
+        guard keepVisible || Date() < hideAt else {
+            return
+        }
+        moveBadge(near: mousePoint())
+        if !window.isVisible {
+            window.orderFrontRegardless()
+        }
     }
 
     @objc private func openSettings() {
@@ -597,6 +645,12 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func quit() {
+        if let mouseMonitor {
+            NSEvent.removeMonitor(mouseMonitor)
+        }
+        if let localMouseMonitor {
+            NSEvent.removeMonitor(localMouseMonitor)
+        }
         NSApp.terminate(nil)
     }
 
