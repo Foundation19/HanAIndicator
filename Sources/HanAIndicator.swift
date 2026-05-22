@@ -39,6 +39,7 @@ private enum SettingKey {
     static let flipHorizontal = "flipHorizontal"
     static let invertColors = "invertColors"
     static let excludedApps = "excludedApps"
+    static let allowedApps = "allowedApps"
 }
 
 // swiftlint:disable line_length
@@ -485,9 +486,9 @@ private final class SettingsWindowController: NSWindowController, NSTableViewDat
     private let invertColorsCheckbox = NSButton(checkboxWithTitle: "Invert colors (dark/black background)", target: nil, action: nil)
     private let blackCatCheckbox = NSButton(checkboxWithTitle: "Cat Mode  (Korean only — animated GIF indicator, hidden on English)", target: nil, action: nil)
     private let blackCatGifLabel = NSTextField(labelWithString: "Built-in GIF (no override)")
-    private let excludedTable = NSTableView()
+    private let allowedTable = NSTableView()
     // (bundleID, displayName) 순서 있는 배열 — 테이블 표시용
-    private var excludedList: [(id: String, name: String)] = []
+    private var allowedList: [(id: String, name: String)] = []
 
     init(appDelegate: AppDelegate) {
         self.appDelegate = appDelegate
@@ -791,31 +792,31 @@ private final class SettingsWindowController: NSWindowController, NSTableViewDat
         let view = NSView(frame: NSRect(x: 0, y: 0, width: 510, height: 340))
         addHeader("Advanced", to: view, y: 292)
 
-        // 제외 앱 섹션
-        let excludeLabel = NSTextField(labelWithString: "Excluded Apps")
-        excludeLabel.frame = NSRect(x: 26, y: 258, width: 200, height: 18)
-        excludeLabel.font = NSFont.boldSystemFont(ofSize: 12)
-        view.addSubview(excludeLabel)
+        // 승인 앱 섹션
+        let allowLabel = NSTextField(labelWithString: "Allowed Apps")
+        allowLabel.frame = NSRect(x: 26, y: 258, width: 200, height: 18)
+        allowLabel.font = NSFont.boldSystemFont(ofSize: 12)
+        view.addSubview(allowLabel)
 
-        let excludeHint = NSTextField(labelWithString: "Indicator is hidden in excluded apps. Click + to add an app.")
-        excludeHint.frame = NSRect(x: 26, y: 238, width: 460, height: 16)
-        excludeHint.font = NSFont.systemFont(ofSize: 11)
-        excludeHint.textColor = .secondaryLabelColor
-        view.addSubview(excludeHint)
+        let allowHint = NSTextField(labelWithString: "Indicator is shown only in allowed apps. Click + to add an app.")
+        allowHint.frame = NSRect(x: 26, y: 238, width: 460, height: 16)
+        allowHint.font = NSFont.systemFont(ofSize: 11)
+        allowHint.textColor = .secondaryLabelColor
+        view.addSubview(allowHint)
 
         // 테이블
         let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("app"))
         col.title = "App"
         col.width = 390
-        excludedTable.addTableColumn(col)
-        excludedTable.headerView = nil
-        excludedTable.rowHeight = 24
-        excludedTable.dataSource = self
-        excludedTable.delegate = self
-        excludedTable.allowsEmptySelection = true
+        allowedTable.addTableColumn(col)
+        allowedTable.headerView = nil
+        allowedTable.rowHeight = 24
+        allowedTable.dataSource = self
+        allowedTable.delegate = self
+        allowedTable.allowsEmptySelection = true
 
         let scroll = NSScrollView(frame: NSRect(x: 26, y: 152, width: 440, height: 82))
-        scroll.documentView = excludedTable
+        scroll.documentView = allowedTable
         scroll.hasVerticalScroller = true
         scroll.borderType = .bezelBorder
         view.addSubview(scroll)
@@ -825,18 +826,18 @@ private final class SettingsWindowController: NSWindowController, NSTableViewDat
         addBtn.title = "+"
         addBtn.bezelStyle = .rounded
         addBtn.target = self
-        addBtn.action = #selector(addExcludedApp)
+        addBtn.action = #selector(addAllowedApp)
         view.addSubview(addBtn)
 
         let removeBtn = NSButton(frame: NSRect(x: 58, y: 126, width: 28, height: 22))
         removeBtn.title = "−"
         removeBtn.bezelStyle = .rounded
         removeBtn.target = self
-        removeBtn.action = #selector(removeExcludedApp)
+        removeBtn.action = #selector(removeAllowedApp)
         view.addSubview(removeBtn)
 
         // 목록 초기화
-        rebuildExcludedList()
+        rebuildAllowedList()
 
         let resetButton = NSButton(title: "Reset Options", target: self, action: #selector(resetOptions))
         resetButton.frame = NSRect(x: 26, y: 84, width: 130, height: 32)
@@ -869,7 +870,7 @@ private final class SettingsWindowController: NSWindowController, NSTableViewDat
             - Icon Size, Anchor, Offset: control badge placement.
 
             Advanced
-            - Excluded Apps: hide indicator in specified apps (e.g. Finder, Safari).
+            - Allowed Apps: show indicator only in specified apps. Hidden everywhere else.
             """,
             x: 26,
             y: 124,
@@ -1084,23 +1085,23 @@ private final class SettingsWindowController: NSWindowController, NSTableViewDat
         NSWorkspace.shared.open(URL(fileURLWithPath: "/Users/macpro/Caticator"))
     }
 
-    // MARK: - Excluded Apps
+    // MARK: - Allowed Apps
 
-    private func rebuildExcludedList() {
-        excludedList = appDelegate.excludedApps.sorted().map { bid in
+    private func rebuildAllowedList() {
+        allowedList = appDelegate.allowedApps.sorted().map { bid in
             let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bid)
             let name = url.flatMap { Bundle(url: $0)?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String }
                 ?? url.flatMap { Bundle(url: $0)?.object(forInfoDictionaryKey: "CFBundleName") as? String }
                 ?? bid
             return (id: bid, name: name)
         }
-        excludedTable.reloadData()
+        allowedTable.reloadData()
     }
 
-    func numberOfRows(in tableView: NSTableView) -> Int { excludedList.count }
+    func numberOfRows(in tableView: NSTableView) -> Int { allowedList.count }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let entry = excludedList[row]
+        let entry = allowedList[row]
         let cell = NSTableCellView()
         cell.frame = NSRect(x: 0, y: 0, width: tableColumn?.width ?? 390, height: 24)
 
@@ -1121,10 +1122,10 @@ private final class SettingsWindowController: NSWindowController, NSTableViewDat
         return cell
     }
 
-    @objc private func addExcludedApp() {
+    @objc private func addAllowedApp() {
         let panel = NSOpenPanel()
-        panel.title = "Choose App to Exclude"
-        panel.prompt = "Exclude"
+        panel.title = "Choose App to Allow"
+        panel.prompt = "Allow"
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
@@ -1134,26 +1135,26 @@ private final class SettingsWindowController: NSWindowController, NSTableViewDat
             guard let self = self, response == .OK, let url = panel.url else { return }
             guard let bundle = Bundle(url: url),
                   let bid = bundle.bundleIdentifier else { return }
-            self.appDelegate.excludedApps.insert(bid)
+            self.appDelegate.allowedApps.insert(bid)
             self.appDelegate.saveOptionsPublic()
-            self.rebuildExcludedList()
+            self.rebuildAllowedList()
         }
     }
 
-    @objc private func removeExcludedApp() {
-        let row = excludedTable.selectedRow
-        guard row >= 0, row < excludedList.count else { return }
-        let name = excludedList[row].name
+    @objc private func removeAllowedApp() {
+        let row = allowedTable.selectedRow
+        guard row >= 0, row < allowedList.count else { return }
+        let name = allowedList[row].name
         let alert = NSAlert()
         alert.messageText = "Remove \"\(name)\"?"
-        alert.informativeText = "The indicator will appear in this app again."
+        alert.informativeText = "The indicator will no longer appear in this app."
         alert.addButton(withTitle: "Remove")
         alert.addButton(withTitle: "Cancel")
         alert.buttons[0].hasDestructiveAction = true
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        appDelegate.excludedApps.remove(excludedList[row].id)
+        appDelegate.allowedApps.remove(allowedList[row].id)
         appDelegate.saveOptionsPublic()
-        rebuildExcludedList()
+        rebuildAllowedList()
     }
 }
 
@@ -1180,7 +1181,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     fileprivate var blackCatGifPath = ""
     fileprivate var koreanImagePath = ""
     fileprivate var englishImagePath = ""
-    fileprivate var excludedApps: Set<String> = ["com.apple.finder"]
+    fileprivate var allowedApps: Set<String> = []
     fileprivate var anchor: BadgeAnchor = .bottomLeft
     fileprivate var offsetX: CGFloat = -4
     fileprivate var offsetY: CGFloat = -32
@@ -1314,7 +1315,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             SettingKey.blackCatGifPath: "",
             SettingKey.koreanImagePath: "",
             SettingKey.englishImagePath: "",
-            SettingKey.excludedApps: "com.apple.finder"
+            SettingKey.allowedApps: ""
         ])
         keepVisible = UserDefaults.standard.bool(forKey: SettingKey.keepVisible)
         preferCaret = UserDefaults.standard.bool(forKey: SettingKey.preferCaret)
@@ -1348,8 +1349,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         blackCatGifPath = UserDefaults.standard.string(forKey: SettingKey.blackCatGifPath) ?? ""
         koreanImagePath = UserDefaults.standard.string(forKey: SettingKey.koreanImagePath) ?? ""
         englishImagePath = UserDefaults.standard.string(forKey: SettingKey.englishImagePath) ?? ""
-        let saved = UserDefaults.standard.string(forKey: SettingKey.excludedApps) ?? "com.apple.finder"
-        excludedApps = Set(saved.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+        let saved = UserDefaults.standard.string(forKey: SettingKey.allowedApps) ?? ""
+        allowedApps = Set(saved.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
     }
 
     fileprivate func saveOptionsPublic() { saveOptions() }
@@ -1377,7 +1378,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(blackCatGifPath, forKey: SettingKey.blackCatGifPath)
         UserDefaults.standard.set(koreanImagePath, forKey: SettingKey.koreanImagePath)
         UserDefaults.standard.set(englishImagePath, forKey: SettingKey.englishImagePath)
-        UserDefaults.standard.set(excludedApps.sorted().joined(separator: ", "), forKey: SettingKey.excludedApps)
+        UserDefaults.standard.set(allowedApps.sorted().joined(separator: ", "), forKey: SettingKey.allowedApps)
     }
 
     private func applyAppearanceOptions() {
@@ -1552,11 +1553,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // 제외 앱이면 즉시 숨김 (grace period, keepVisible 무시)
+        // 승인 앱이 아니면 즉시 숨김 (grace period, keepVisible 무시)
         if let app = NSWorkspace.shared.frontmostApplication {
             let bid = (app.bundleIdentifier ?? "").lowercased()
             let name = (app.localizedName ?? "").lowercased()
-            if excludedApps.contains(where: { bid == $0.lowercased() || name == $0.lowercased() }) {
+            if !allowedApps.contains(where: { bid == $0.lowercased() || name == $0.lowercased() }) {
                 lastCaretPoint = nil
                 caretLostSince = nil
                 window.orderOut(nil)
@@ -1808,7 +1809,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         anchor = .bottomLeft
         offsetX = -4
         offsetY = -10
-        excludedApps = ["com.apple.finder"]
+        allowedApps = []
         saveOptions()
         applyAppearanceOptions()
     }
