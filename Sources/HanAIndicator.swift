@@ -1020,7 +1020,7 @@ private final class SettingsWindowController: NSWindowController, NSTableViewDat
     }
 
     @objc private func openProjectFolder() {
-        NSWorkspace.shared.open(URL(fileURLWithPath: "/Users/macpro/HanAIndicator"))
+        NSWorkspace.shared.open(URL(fileURLWithPath: "/Users/macpro/Caticator"))
     }
 
     // MARK: - Excluded Apps

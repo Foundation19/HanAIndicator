@@ -51,7 +51,7 @@ if [ -f "$ROOT/AppIcon.icns" ]; then
 fi
 
 # 고정 인증서로 서명
-CERT="HanAIndicator Local"
+CERT="Caticator Local"
 if security find-certificate -c "$CERT" ~/Library/Keychains/login.keychain-db >/dev/null 2>&1; then
   codesign --force --deep --sign "$CERT" "$APP" 2>/dev/null \
     && echo "Signed: $CERT" \
