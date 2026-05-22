@@ -1,6 +1,6 @@
-# HanAIndicator
+# Caticator
 
-Version: `0.2.4`
+Version: `0.3.3`
 
 Small local macOS menu bar app that shows the current input source as a badge:
 
@@ -14,19 +14,19 @@ mouse pointer.
 ## Build
 
 ```bash
-/Users/macpro/HanAIndicator/build.sh
+/Users/macpro/Caticator/build.sh
 ```
 
 ## Run
 
 ```bash
-open /Users/macpro/HanAIndicator/build/HanAIndicator.app
+open /Users/macpro/Caticator/build/Caticator.app
 ```
 
 When macOS asks for permission, allow it in:
 
 ```text
-System Settings -> Privacy & Security -> Accessibility -> HanAIndicator
+System Settings -> Privacy & Security -> Accessibility -> Caticator
 ```
 
 ## Menu
@@ -34,9 +34,9 @@ System Settings -> Privacy & Security -> Accessibility -> HanAIndicator
 The menu bar item is `한A`.
 
 - `Settings...`: opens the categorized settings window
-- `Version 0.2.4`: shows the current app version
+- `Version 0.3.3`: shows the current app version
 - `Open Accessibility Settings`: open the required macOS permission panel
-- `Quit HanAIndicator`: quit the app
+- `Quit Caticator`: quit the app
 
 ## Settings
 
@@ -46,7 +46,7 @@ The menu bar item is `한A`.
   if you only want a short confirmation after switching input sources.
 - `Prefer text cursor position`: tries to attach the badge to the blinking text
   cursor. If the active app does not expose a cursor rectangle through
-  Accessibility, HanAIndicator falls back to the mouse pointer.
+  Accessibility, Caticator falls back to the mouse pointer.
 
 ### Indicator
 
@@ -66,6 +66,8 @@ The menu bar item is `한A`.
 
 ### Advanced
 
+- `Allowed Apps`: show the indicator only in the apps you add. Hidden
+  everywhere else. Click `+` to add an app, `−` to remove the selected one.
 - `Reset Options`: restores defaults.
 - `Open Project Folder`: opens the local project folder.
 

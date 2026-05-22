@@ -7,7 +7,7 @@ BIN="$APP/Contents/MacOS/Caticator"
 
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-swiftc "$ROOT/Sources/HanAIndicator.swift" \
+swiftc "$ROOT/Sources/Caticator.swift" \
   -framework AppKit \
   -framework Carbon \
   -framework ApplicationServices \
