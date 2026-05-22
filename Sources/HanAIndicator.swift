@@ -6,9 +6,9 @@ import ImageIO
 import os
 import UniformTypeIdentifiers
 
-private let log = Logger(subsystem: "com.hanaindicator", category: "app")
+private let log = Logger(subsystem: "com.caticator", category: "app")
 
-private let appVersion = "0.3.0"
+private let appVersion = "0.3.1"
 private let defaultBadgeSize: CGFloat = 25
 private let badgeOuterPadding: CGFloat = 5
 private let badgeAspectRatio: CGFloat = 1.42
@@ -36,6 +36,7 @@ private enum SettingKey {
     static let koreanImagePath = "koreanImagePath"
     static let englishImagePath = "englishImagePath"
     static let flipHorizontal = "flipHorizontal"
+    static let excludedApps = "excludedApps"
 }
 
 // swiftlint:disable line_length
@@ -441,7 +442,7 @@ private final class BadgeWindow: NSPanel {
     }
 }
 
-private final class SettingsWindowController: NSWindowController {
+private final class SettingsWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate {
     private unowned let appDelegate: AppDelegate
     private let keepVisibleButton = NSButton(checkboxWithTitle: "Keep badge visible", target: nil, action: nil)
     private let preferCaretButton = NSButton(checkboxWithTitle: "Prefer text cursor position", target: nil, action: nil)
@@ -453,7 +454,7 @@ private final class SettingsWindowController: NSWindowController {
     private let englishLabelField = NSTextField(string: "A")
     private let imagePathLabel = NSTextField(labelWithString: "No custom image selected")
     private let anchorPopup = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let offsetXField = NSTextField(string: "8")
+    private let offsetXField = NSTextField(string: "-4")
     private let offsetYField = NSTextField(string: "-10")
     private let koreanBackgroundWell = NSColorWell(frame: .zero)
     private let koreanTextWell = NSColorWell(frame: .zero)
@@ -468,6 +469,9 @@ private final class SettingsWindowController: NSWindowController {
     private let flipHCheckbox = NSButton(checkboxWithTitle: "Flip Horizontal", target: nil, action: nil)
     private let blackCatCheckbox = NSButton(checkboxWithTitle: "BlackCat Mode  (Korean only — shows animated GIF, hides on English)", target: nil, action: nil)
     private let blackCatGifLabel = NSTextField(labelWithString: "Built-in GIF (no override)")
+    private let excludedTable = NSTableView()
+    // (bundleID, displayName) 순서 있는 배열 — 테이블 표시용
+    private var excludedList: [(id: String, name: String)] = []
 
     init(appDelegate: AppDelegate) {
         self.appDelegate = appDelegate
@@ -751,19 +755,60 @@ private final class SettingsWindowController: NSWindowController {
     private func advancedView() -> NSView {
         let view = NSView(frame: NSRect(x: 0, y: 0, width: 510, height: 340))
         addHeader("Advanced", to: view, y: 292)
-        view.addSubview(helpText(
-            "HanAIndicator checks the active macOS input source every 0.12 seconds and also listens for input-source change notifications. It does not read the text you type.",
-            x: 26,
-            y: 226,
-            width: 440
-        ))
+
+        // 제외 앱 섹션
+        let excludeLabel = NSTextField(labelWithString: "Excluded Apps")
+        excludeLabel.frame = NSRect(x: 26, y: 258, width: 200, height: 18)
+        excludeLabel.font = NSFont.boldSystemFont(ofSize: 12)
+        view.addSubview(excludeLabel)
+
+        let excludeHint = NSTextField(labelWithString: "+ 버튼으로 앱을 추가하면 해당 앱에서는 인디케이터가 숨겨집니다.")
+        excludeHint.frame = NSRect(x: 26, y: 238, width: 460, height: 16)
+        excludeHint.font = NSFont.systemFont(ofSize: 11)
+        excludeHint.textColor = .secondaryLabelColor
+        view.addSubview(excludeHint)
+
+        // 테이블
+        let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("app"))
+        col.title = "App"
+        col.width = 390
+        excludedTable.addTableColumn(col)
+        excludedTable.headerView = nil
+        excludedTable.rowHeight = 24
+        excludedTable.dataSource = self
+        excludedTable.delegate = self
+        excludedTable.allowsEmptySelection = true
+
+        let scroll = NSScrollView(frame: NSRect(x: 26, y: 152, width: 440, height: 82))
+        scroll.documentView = excludedTable
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
+        view.addSubview(scroll)
+
+        // + / - 버튼
+        let addBtn = NSButton(frame: NSRect(x: 26, y: 126, width: 28, height: 22))
+        addBtn.title = "+"
+        addBtn.bezelStyle = .rounded
+        addBtn.target = self
+        addBtn.action = #selector(addExcludedApp)
+        view.addSubview(addBtn)
+
+        let removeBtn = NSButton(frame: NSRect(x: 58, y: 126, width: 28, height: 22))
+        removeBtn.title = "−"
+        removeBtn.bezelStyle = .rounded
+        removeBtn.target = self
+        removeBtn.action = #selector(removeExcludedApp)
+        view.addSubview(removeBtn)
+
+        // 목록 초기화
+        rebuildExcludedList()
 
         let resetButton = NSButton(title: "Reset Options", target: self, action: #selector(resetOptions))
-        resetButton.frame = NSRect(x: 26, y: 172, width: 130, height: 32)
+        resetButton.frame = NSRect(x: 26, y: 84, width: 130, height: 32)
         view.addSubview(resetButton)
 
         let buildButton = NSButton(title: "Open Project Folder", target: self, action: #selector(openProjectFolder))
-        buildButton.frame = NSRect(x: 170, y: 172, width: 160, height: 32)
+        buildButton.frame = NSRect(x: 170, y: 84, width: 160, height: 32)
         view.addSubview(buildButton)
 
         return view
@@ -977,6 +1022,70 @@ private final class SettingsWindowController: NSWindowController {
     @objc private func openProjectFolder() {
         NSWorkspace.shared.open(URL(fileURLWithPath: "/Users/macpro/HanAIndicator"))
     }
+
+    // MARK: - Excluded Apps
+
+    private func rebuildExcludedList() {
+        excludedList = appDelegate.excludedApps.sorted().map { bid in
+            let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bid)
+            let name = url.flatMap { Bundle(url: $0)?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String }
+                ?? url.flatMap { Bundle(url: $0)?.object(forInfoDictionaryKey: "CFBundleName") as? String }
+                ?? bid
+            return (id: bid, name: name)
+        }
+        excludedTable.reloadData()
+    }
+
+    func numberOfRows(in tableView: NSTableView) -> Int { excludedList.count }
+
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        let entry = excludedList[row]
+        let cell = NSTableCellView()
+        cell.frame = NSRect(x: 0, y: 0, width: tableColumn?.width ?? 390, height: 24)
+
+        let imgView = NSImageView(frame: NSRect(x: 4, y: 3, width: 18, height: 18))
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: entry.id) {
+            imgView.image = NSWorkspace.shared.icon(forFile: url.path)
+            imgView.image?.size = NSSize(width: 18, height: 18)
+        }
+        cell.addSubview(imgView)
+        cell.imageView = imgView
+
+        let label = NSTextField(labelWithString: entry.name)
+        label.frame = NSRect(x: 28, y: 4, width: (tableColumn?.width ?? 390) - 32, height: 16)
+        label.font = NSFont.systemFont(ofSize: 12)
+        cell.addSubview(label)
+        cell.textField = label
+
+        return cell
+    }
+
+    @objc private func addExcludedApp() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose App to Exclude"
+        panel.prompt = "Exclude"
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedFileTypes = ["app"]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.begin { [weak self] response in
+            guard let self = self, response == .OK, let url = panel.url else { return }
+            guard let bundle = Bundle(url: url),
+                  let bid = bundle.bundleIdentifier else { return }
+            self.appDelegate.excludedApps.insert(bid)
+            self.appDelegate.saveOptionsPublic()
+            self.rebuildExcludedList()
+        }
+    }
+
+    @objc private func removeExcludedApp() {
+        let row = excludedTable.selectedRow
+        guard row >= 0, row < excludedList.count else { return }
+        appDelegate.excludedApps.remove(excludedList[row].id)
+        appDelegate.saveOptionsPublic()
+        rebuildExcludedList()
+    }
 }
 
 private final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -1001,8 +1110,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     fileprivate var blackCatGifPath = ""
     fileprivate var koreanImagePath = ""
     fileprivate var englishImagePath = ""
-    fileprivate var anchor: BadgeAnchor = .bottomRight
-    fileprivate var offsetX: CGFloat = 18
+    fileprivate var excludedApps: Set<String> = ["com.apple.finder"]
+    fileprivate var anchor: BadgeAnchor = .bottomLeft
+    fileprivate var offsetX: CGFloat = -4
     fileprivate var offsetY: CGFloat = -32
     fileprivate var koreanBackgroundColor = NSColor(hex: defaultKoreanBackground)!
     fileprivate var koreanTextColor = NSColor(hex: defaultKoreanText)!
@@ -1015,14 +1125,15 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cachedIsKorean = false
     private var cachedSourceID = ""
     private var lastCaretPoint: CGPoint?
-    private var lastCaretCheck = Date.distantPast  // AX 쿼리 스로틀용
-    private var lastBadgeSource = ""   // 로그용: "caret" / "lastCaret" / "mouse"
+    private var lastCaretCheck = Date.distantPast
+    private var lastBadgeSource = ""
+    private var caretLostSince: Date? = nil    // AX 위치 소실 시작 시각 (유예용)
     private var lastMouseActivity = Date()
     private var lastTypingActivity = Date()
     private var isDimmed = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        log.info("HanAIndicator launched")
+        log.info("Caticator launched")
         NSApp.setActivationPolicy(.accessory)
         loadOptions()
         buildMenu()
@@ -1044,7 +1155,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildMenu() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = menuBarImage()
+        item.button?.image = fixedMenuBarImage
         item.button?.title = ""
 
         let menu = NSMenu()
@@ -1074,19 +1185,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // GIF 첫 프레임 → 메뉴바 템플릿 아이콘 (18pt)
-    private func menuBarImage() -> NSImage? {
-        let src: CGImageSource?
-        if !blackCatGifPath.isEmpty,
-           let gifSrc = CGImageSourceCreateWithURL(URL(fileURLWithPath: blackCatGifPath) as CFURL, nil) {
-            src = gifSrc
-        } else if let data = Data(base64Encoded: embeddedBlackCatGif) {
-            src = CGImageSourceCreateWithData(data as CFData, nil)
-        } else {
-            src = nil
-        }
-        guard let imgSrc = src,
-              let cgImage = CGImageSourceCreateImageAtIndex(imgSrc, 0, nil) else { return nil }
-
+    // 앱 시작 시 한 번만 계산 — 이후 절대 변경 안 함
+    private lazy var fixedMenuBarImage: NSImage? = {
+        guard let data = Data(base64Encoded: embeddedBlackCatGif),
+              let src = CGImageSourceCreateWithData(data as CFData, nil),
+              let cgImage = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
         let side = 18
         guard let ctx = CGContext(
             data: nil, width: side, height: side,
@@ -1094,14 +1197,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return nil }
-
-        // Y 반전 (CGImage top-left → CG bottom-left)
-        ctx.translateBy(x: 0, y: CGFloat(side))
-        ctx.scaleBy(x: 1, y: -1)
         ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: side, height: side))
-
-        guard let data = ctx.data else { return nil }
-        let buf = data.bindMemory(to: UInt8.self, capacity: side * side * 4)
+        guard let pixelData = ctx.data else { return nil }
+        let buf = pixelData.bindMemory(to: UInt8.self, capacity: side * side * 4)
         for i in 0..<(side * side) {
             let r = buf[i*4], g = buf[i*4+1], b = buf[i*4+2]
             if r > 160 && g > 160 && b > 160 { buf[i*4+3] = 0 }
@@ -1110,18 +1208,18 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         let img = NSImage(cgImage: result, size: NSSize(width: side, height: side))
         img.isTemplate = true
         return img
-    }
+    }()
 
     private func loadOptions() {
         UserDefaults.standard.register(defaults: [
-            SettingKey.keepVisible: true,
+            SettingKey.keepVisible: false,
             SettingKey.preferCaret: true,
             SettingKey.badgeSize: Double(defaultBadgeSize),
             SettingKey.koreanLabel: "한",
             SettingKey.englishLabel: "A",
             SettingKey.customImagePath: "",
-            SettingKey.anchor: BadgeAnchor.bottomRight.rawValue,
-            SettingKey.offsetX: 8.0,
+            SettingKey.anchor: BadgeAnchor.bottomLeft.rawValue,
+            SettingKey.offsetX: -4.0,
             SettingKey.offsetY: -10.0,
             SettingKey.koreanBackgroundColor: defaultKoreanBackground,
             SettingKey.koreanTextColor: defaultKoreanText,
@@ -1133,7 +1231,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             SettingKey.blackCatMode: false,
             SettingKey.blackCatGifPath: "",
             SettingKey.koreanImagePath: "",
-            SettingKey.englishImagePath: ""
+            SettingKey.englishImagePath: "",
+            SettingKey.excludedApps: "com.apple.finder"
         ])
         keepVisible = UserDefaults.standard.bool(forKey: SettingKey.keepVisible)
         preferCaret = UserDefaults.standard.bool(forKey: SettingKey.preferCaret)
@@ -1145,9 +1244,14 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         koreanLabel = UserDefaults.standard.string(forKey: SettingKey.koreanLabel) ?? "한"
         englishLabel = UserDefaults.standard.string(forKey: SettingKey.englishLabel) ?? "A"
         customImagePath = UserDefaults.standard.string(forKey: SettingKey.customImagePath) ?? ""
-        let anchorRawValue = UserDefaults.standard.string(forKey: SettingKey.anchor) ?? BadgeAnchor.bottomRight.rawValue
-        anchor = BadgeAnchor(rawValue: anchorRawValue) ?? .bottomRight
+        let anchorRawValue = UserDefaults.standard.string(forKey: SettingKey.anchor) ?? BadgeAnchor.bottomLeft.rawValue
+        anchor = BadgeAnchor(rawValue: anchorRawValue) ?? .bottomLeft
         offsetX = CGFloat(UserDefaults.standard.double(forKey: SettingKey.offsetX))
+        // 구버전 기본값(bottomRight+8) → 왼쪽 정렬 마이그레이션
+        if anchor == .bottomRight && offsetX == 8 {
+            anchor = .bottomLeft
+            offsetX = -4
+        }
         offsetY = CGFloat(UserDefaults.standard.double(forKey: SettingKey.offsetY))
         koreanBackgroundColor = colorSetting(SettingKey.koreanBackgroundColor, fallback: defaultKoreanBackground)
         koreanTextColor = colorSetting(SettingKey.koreanTextColor, fallback: defaultKoreanText)
@@ -1161,7 +1265,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         blackCatGifPath = UserDefaults.standard.string(forKey: SettingKey.blackCatGifPath) ?? ""
         koreanImagePath = UserDefaults.standard.string(forKey: SettingKey.koreanImagePath) ?? ""
         englishImagePath = UserDefaults.standard.string(forKey: SettingKey.englishImagePath) ?? ""
+        let saved = UserDefaults.standard.string(forKey: SettingKey.excludedApps) ?? "com.apple.finder"
+        excludedApps = Set(saved.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
     }
+
+    fileprivate func saveOptionsPublic() { saveOptions() }
 
     private func saveOptions() {
         UserDefaults.standard.set(keepVisible, forKey: SettingKey.keepVisible)
@@ -1184,6 +1292,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(blackCatGifPath, forKey: SettingKey.blackCatGifPath)
         UserDefaults.standard.set(koreanImagePath, forKey: SettingKey.koreanImagePath)
         UserDefaults.standard.set(englishImagePath, forKey: SettingKey.englishImagePath)
+        UserDefaults.standard.set(excludedApps.sorted().joined(separator: ", "), forKey: SettingKey.excludedApps)
     }
 
     private func applyAppearanceOptions() {
@@ -1225,8 +1334,6 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         window.badgeView.flipHorizontal = flipHorizontal
-        // 메뉴바 아이콘 동기화
-        statusItem?.button?.image = menuBarImage()
         window.badgeView.koreanBackgroundColor = koreanBackgroundColor
         window.badgeView.koreanTextColor = koreanTextColor
         window.badgeView.englishBackgroundColor = englishBackgroundColor
@@ -1267,7 +1374,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         let trusted = AXIsProcessTrustedWithOptions(options)
         log.info("AX trusted on launch: \(trusted)")
         if !trusted {
-            log.warning("AX not granted — caretPoint() will return nil. Go to System Settings > Privacy > Accessibility and add HanAIndicator.")
+            log.warning("AX not granted — caretPoint() will return nil. Go to System Settings > Privacy > Accessibility and add Caticator.")
         }
     }
 
@@ -1282,7 +1389,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             lines.append("⚠️  접근성 권한이 없습니다.")
             lines.append("아래 버튼으로 권한을 요청하거나")
             lines.append("System Settings > Privacy > Accessibility")
-            lines.append("에서 HanAIndicator를 직접 추가하세요.")
+            lines.append("에서 Caticator를 직접 추가하세요.")
             return lines.joined(separator: "\n")
         }
 
@@ -1358,24 +1465,50 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // 제외 앱이면 즉시 숨김 (grace period, keepVisible 무시)
+        if let app = NSWorkspace.shared.frontmostApplication {
+            let bid = (app.bundleIdentifier ?? "").lowercased()
+            let name = (app.localizedName ?? "").lowercased()
+            if excludedApps.contains(where: { bid == $0.lowercased() || name == $0.lowercased() }) {
+                lastCaretPoint = nil
+                caretLostSince = nil
+                window.orderOut(nil)
+                return
+            }
+        }
+
+        // preferCaret 모드: 캐럿 감지 시 hideAt와 무관하게 항상 표시
+        if preferCaret {
+            if let p = throttledCaretPoint() {
+                moveBadge(near: p)
+                if !window.isVisible { window.orderFrontRegardless() }
+                return
+            } else if !keepVisible {
+                window.orderOut(nil)
+                return
+            }
+            // keepVisible ON → 아래 hideAt 체크 + 마우스 추적으로 계속
+        }
+
         guard keepVisible || Date() < hideAt else {
             window.orderOut(nil)
             return
         }
 
-        if preferCaret {
-            moveBadge(near: throttledCaretPoint() ?? mousePoint())
-        } else {
-            moveBadge(near: mousePoint())
-        }
-        if !window.isVisible {
-            window.orderFrontRegardless()
-        }
+        moveBadge(near: mousePoint())
+        if !window.isVisible { window.orderFrontRegardless() }
     }
 
     @objc private func inputSourceChanged() {
         hideAt = Date().addingTimeInterval(2.0)
-        lastCaretCheck = Date.distantPast  // 입력 소스 전환 시 즉시 AX 쿼리
+        lastCaretCheck = Date.distantPast
+        caretLostSince = nil
+        // 전환 시점을 활성 기준으로 초기화 — 즉시 dim 방지
+        let now = Date()
+        lastTypingActivity = now
+        lastMouseActivity = now
+        isDimmed = false
+        window.alphaValue = activeBadgeOpacity
         refreshInputSourceIfNeeded(force: true)
         tick()
     }
@@ -1418,6 +1551,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func markMouseActive() {
         lastMouseActivity = Date()
+        // preferCaret 모드: 마우스로 undim 안 함 (타이핑만 활성화 기준)
+        if preferCaret { return }
         guard isDimmed || window.alphaValue < activeBadgeOpacity else { return }
         isDimmed = false
         NSAnimationContext.runAnimationGroup { ctx in
@@ -1566,7 +1701,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     fileprivate func resetOptions() {
-        keepVisible = true
+        keepVisible = false
         preferCaret = true
         badgeSize = defaultBadgeSize
         idleDimDelay = 2.0
@@ -1583,9 +1718,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         koreanTextColor = NSColor(hex: defaultKoreanText)!
         englishBackgroundColor = NSColor(hex: defaultEnglishBackground)!
         englishTextColor = NSColor(hex: defaultEnglishText)!
-        anchor = .bottomRight
-        offsetX = 8
+        anchor = .bottomLeft
+        offsetX = -4
         offsetY = -10
+        excludedApps = ["com.apple.finder"]
         saveOptions()
         applyAppearanceOptions()
     }
@@ -1649,27 +1785,44 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         return location
     }
 
+    private func isOnScreen(_ p: CGPoint) -> Bool {
+        NSScreen.screens.contains(where: { $0.frame.contains(p) })
+    }
+
     // AX 쿼리를 최대 0.3초에 1번으로 제한 — 웹브라우저 메인스레드 차단 방지
     private func throttledCaretPoint() -> CGPoint? {
         let now = Date()
-        if now.timeIntervalSince(lastCaretCheck) >= 0.3 {
-            lastCaretCheck = now
-            if let p = caretPoint() {
-                if lastBadgeSource != "caret" {
-                    lastBadgeSource = "caret"
-                    log.info("badge source → CARET (\(Int(p.x)), \(Int(p.y)))")
-                }
-                return p
+        guard now.timeIntervalSince(lastCaretCheck) >= 0.3 else { return lastCaretPoint }
+        lastCaretCheck = now
+
+        if let p = caretPoint(), isOnScreen(p) {
+            // Velocity filter: 직전 위치 대비 Y가 200px 이상 점프 → AX 오류 좌표
+            if let prev = lastCaretPoint, abs(p.y - prev.y) > 200 {
+                if caretLostSince == nil { caretLostSince = now }
             } else {
-                if lastBadgeSource != "mouse" {
-                    lastBadgeSource = "mouse"
-                    log.info("badge source → MOUSE (caret unavailable)")
+                // 정상 위치 — 업데이트
+                caretLostSince = nil
+                if let prev = lastCaretPoint,
+                   (abs(p.x - prev.x) > 1 || abs(p.y - prev.y) > 1) {
+                    lastTypingActivity = now
                 }
-                lastCaretPoint = nil
-                return nil
+                lastCaretPoint = p
+                if lastBadgeSource != "caret" { lastBadgeSource = "caret" }
+                return p
             }
+        } else {
+            // AX nil
+            if caretLostSince == nil { caretLostSince = now }
         }
-        // 스로틀 구간: 캐시된 위치 재사용
+
+        // 유예 기간(1.5s): 마지막 유효 위치 유지
+        let grace: TimeInterval = 1.5
+        if let lost = caretLostSince, now.timeIntervalSince(lost) >= grace {
+            if lastBadgeSource != "mouse" { lastBadgeSource = "mouse" }
+            lastCaretPoint = nil
+            caretLostSince = nil
+            return nil
+        }
         return lastCaretPoint
     }
 
@@ -1699,6 +1852,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         dbg("AX trusted: \(trusted)")
         guard trusted else { return nil }
 
+        let myPID = ProcessInfo.processInfo.processIdentifier
         let appName = NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"
         dbg("Frontmost: \(appName)")
 
@@ -1710,6 +1864,12 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if r0 == .success, let el = sysRef {
             let focused = el as! AXUIElement
+            // 자기 앱(Settings 창) 요소는 무시
+            var elPID: pid_t = 0
+            guard AXUIElementGetPid(focused, &elPID) != .success || elPID != myPID else {
+                dbg("  ⏭ 자기 앱 요소 → skip")
+                return nil
+            }
             var roleRef: CFTypeRef?
             AXUIElementCopyAttributeValue(focused, kAXRoleAttribute as CFString, &roleRef)
             dbg("  Role: \(roleRef as? String ?? "nil")")
@@ -1723,6 +1883,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 앱 레벨 폴백
         guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
+        // 자기 앱이 frontmost면 (Settings 창 열린 경우) 추적 안 함
+        guard app.processIdentifier != myPID else {
+            dbg("  ⏭ frontmost = 자기 앱 → skip")
+            return nil
+        }
         let appEl = AXUIElementCreateApplication(app.processIdentifier)
         var appRef: CFTypeRef?
         let r1 = AXUIElementCopyAttributeValue(appEl, kAXFocusedUIElementAttribute as CFString, &appRef)
@@ -1755,6 +1920,12 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         let textEl = bestTextElement(from: focusedElement)
         dbg("    bestTextElement: \(textEl == nil ? "nil" : "found")")
         guard let textElement = textEl else { return nil }
+
+        // 편집 불가능한 요소면 무시 (정적 텍스트, 레이블 등)
+        guard isTextLike(textElement) else {
+            dbg("    ❌ not editable — skip")
+            return nil
+        }
 
         var roleRef: CFTypeRef?
         AXUIElementCopyAttributeValue(textElement, kAXRoleAttribute as CFString, &roleRef)
@@ -1818,24 +1989,23 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func isTextLike(_ element: AXUIElement) -> Bool {
         let role = axString(element, kAXRoleAttribute) ?? ""
-        let subrole = axString(element, kAXSubroleAttribute) ?? ""
-        if role.contains("Text") || role.contains("ComboBox") || role.contains("SearchField") {
-            return true
-        }
-        if subrole.contains("Text") || subrole.contains("SearchField") {
-            return true
-        }
 
+        // AXStaticText 등 읽기전용 표시 요소 제외
+        let readOnlyRoles = ["AXStaticText", "AXHeading", "AXGroup", "AXList",
+                             "AXTable", "AXOutline", "AXButton", "AXImage"]
+        if readOnlyRoles.contains(role) { return false }
+
+        // AXEditable 속성이 가장 신뢰할 수 있는 기준
         var editableValue: CFTypeRef?
-        if AXUIElementCopyAttributeValue(
-            element,
-            "AXEditable" as CFString,
-            &editableValue
-        ) == .success,
+        if AXUIElementCopyAttributeValue(element, "AXEditable" as CFString, &editableValue) == .success,
            let editable = editableValue as? Bool {
             return editable
         }
-        return false
+
+        // AXEditable 없으면 역할로 판단 (명확한 입력 역할만)
+        let editableRoles = ["AXTextField", "AXTextArea", "AXSearchField",
+                             "AXComboBox", "AXSecureTextField"]
+        return editableRoles.contains(role)
     }
 
     private func axString(_ element: AXUIElement, _ attribute: String) -> String? {
