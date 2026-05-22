@@ -36,6 +36,7 @@ private enum SettingKey {
     static let koreanImagePath = "koreanImagePath"
     static let englishImagePath = "englishImagePath"
     static let flipHorizontal = "flipHorizontal"
+    static let invertColors = "invertColors"
     static let excludedApps = "excludedApps"
 }
 
@@ -133,6 +134,9 @@ private final class BadgeView: NSView {
     var flipHorizontal = false {
         didSet { needsDisplay = true }
     }
+    var invertColors = false {
+        didSet { needsDisplay = true }
+    }
     var gifFrames: [(CGImage, TimeInterval)] = []
     var currentFrameIndex = 0
     private var gifTimer: Timer?
@@ -161,7 +165,16 @@ private final class BadgeView: NSView {
                 cgCtx.translateBy(x: bounds.width, y: 0)
                 cgCtx.scaleBy(x: -1, y: 1)
             }
-            cgCtx.draw(gifFrames[currentFrameIndex].0, in: bounds)
+            let frame = gifFrames[currentFrameIndex].0
+            if invertColors {
+                let ciImg = CIImage(cgImage: frame).applyingFilter("CIColorInvert")
+                if let inv = CIContext(options: [.useSoftwareRenderer: false])
+                    .createCGImage(ciImg, from: ciImg.extent) {
+                    cgCtx.draw(inv, in: bounds)
+                } else { cgCtx.draw(frame, in: bounds) }
+            } else {
+                cgCtx.draw(frame, in: bounds)
+            }
             cgCtx.restoreGState()
             return
         }
@@ -467,6 +480,7 @@ private final class SettingsWindowController: NSWindowController, NSTableViewDat
     private let koreanImageLabel = NSTextField(labelWithString: "No image selected")
     private let englishImageLabel = NSTextField(labelWithString: "No image selected")
     private let flipHCheckbox = NSButton(checkboxWithTitle: "Flip Horizontal", target: nil, action: nil)
+    private let invertColorsCheckbox = NSButton(checkboxWithTitle: "Invert colors (dark/black background)", target: nil, action: nil)
     private let blackCatCheckbox = NSButton(checkboxWithTitle: "BlackCat Mode  (Korean only — shows animated GIF, hides on English)", target: nil, action: nil)
     private let blackCatGifLabel = NSTextField(labelWithString: "Built-in GIF (no override)")
     private let excludedTable = NSTableView()
@@ -618,10 +632,11 @@ private final class SettingsWindowController: NSWindowController, NSTableViewDat
         pxLabel.frame = NSRect(x: 370, y: 280, width: 28, height: 18)
         pxLabel.textColor = .secondaryLabelColor
         view.addSubview(pxLabel)
-        flipHCheckbox.frame = NSRect(x: 402, y: 278, width: 130, height: 20)
+        flipHCheckbox.frame = NSRect(x: 402, y: 278, width: 140, height: 20)
         flipHCheckbox.target = self
         flipHCheckbox.action = #selector(flipHChanged)
         view.addSubview(flipHCheckbox)
+
 
         // ── Display mode radio buttons ───────────────────────────
         labelsRadio.frame = NSRect(x: 26, y: 252, width: 160, height: 20)
@@ -968,6 +983,12 @@ private final class SettingsWindowController: NSWindowController, NSTableViewDat
         appDelegate.setFlipHorizontal(flipHCheckbox.state == .on)
     }
 
+    @objc private func invertColorsChanged() {
+        appDelegate.invertColors = (invertColorsCheckbox.state == .on)
+        appDelegate.saveOptionsPublic()
+        appDelegate.applyAppearanceOptionsPublic()
+    }
+
     @objc private func blackCatModeChanged() {
         appDelegate.setBlackCatMode(blackCatCheckbox.state == .on)
     }
@@ -1104,6 +1125,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     fileprivate var englishLabel = "A"
     fileprivate var idleDimDelay: TimeInterval = 2.0
     fileprivate var flipHorizontal = false
+    fileprivate var invertColors = false
     fileprivate var customImagePath = ""
     fileprivate var badgeDisplayMode = "labels"
     fileprivate var blackCatMode = false
@@ -1260,6 +1282,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         let rawDelay = UserDefaults.standard.double(forKey: SettingKey.idleDimDelay)
         idleDimDelay = rawDelay > 0 ? max(0.1, min(60, rawDelay)) : 2.0
         flipHorizontal = UserDefaults.standard.bool(forKey: SettingKey.flipHorizontal)
+        invertColors = UserDefaults.standard.bool(forKey: SettingKey.invertColors)
         badgeDisplayMode = UserDefaults.standard.string(forKey: SettingKey.badgeDisplayMode) ?? "labels"
         blackCatMode = UserDefaults.standard.bool(forKey: SettingKey.blackCatMode)
         blackCatGifPath = UserDefaults.standard.string(forKey: SettingKey.blackCatGifPath) ?? ""
@@ -1270,6 +1293,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     fileprivate func saveOptionsPublic() { saveOptions() }
+    fileprivate func applyAppearanceOptionsPublic() { applyAppearanceOptions() }
 
     private func saveOptions() {
         UserDefaults.standard.set(keepVisible, forKey: SettingKey.keepVisible)
@@ -1287,6 +1311,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(englishTextColor.hexString, forKey: SettingKey.englishTextColor)
         UserDefaults.standard.set(idleDimDelay, forKey: SettingKey.idleDimDelay)
         UserDefaults.standard.set(flipHorizontal, forKey: SettingKey.flipHorizontal)
+        UserDefaults.standard.set(invertColors, forKey: SettingKey.invertColors)
         UserDefaults.standard.set(badgeDisplayMode, forKey: SettingKey.badgeDisplayMode)
         UserDefaults.standard.set(blackCatMode, forKey: SettingKey.blackCatMode)
         UserDefaults.standard.set(blackCatGifPath, forKey: SettingKey.blackCatGifPath)
@@ -1334,6 +1359,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         window.badgeView.flipHorizontal = flipHorizontal
+        window.badgeView.invertColors = invertColors
         window.badgeView.koreanBackgroundColor = koreanBackgroundColor
         window.badgeView.koreanTextColor = koreanTextColor
         window.badgeView.englishBackgroundColor = englishBackgroundColor
@@ -1936,13 +1962,12 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             dbg("    ✅ selectionRect → AppKit(\(Int(pt.x)),\(Int(pt.y)))")
             return pt
         }
-        dbg("    selectedTextRect=nil → elementRect 시도")
         if let rect = elementRect(textElement) {
+            // 커서 위치 불명 시 텍스트 필드 왼쪽 상단에 고정
             let pt = axToAppKit(CGPoint(x: rect.minX, y: rect.minY))
             dbg("    ⚠️ elementRect fallback → AppKit(\(Int(pt.x)),\(Int(pt.y)))")
             return pt
         }
-        dbg("    ❌ elementRect=nil")
         return nil
     }
 
@@ -2152,6 +2177,33 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         origin.x = max(screenFrame.minX - size.width / 2, min(origin.x, screenFrame.maxX - size.width / 2))
         origin.y = max(screenFrame.minY - size.height / 2, min(origin.y, screenFrame.maxY - size.height / 2))
         window.setFrameOrigin(origin)
+        updateInvertForBackground(at: NSRect(origin: origin, size: size))
+    }
+
+    private let knownDarkAppIDs: Set<String> = [
+        "com.apple.Terminal",
+        "com.googlecode.iterm2",
+        "net.kovidgoyal.kitty",
+        "io.alacritty",
+        "com.github.wez.wezterm",
+        "dev.warp.Warp-Stable",
+        "com.mitchellh.ghostty",
+        "co.zeit.hyper",
+        "com.hyper.app"
+    ]
+    private let darkAppNameKeywords = ["terminal", "iterm", "hyper", "warp", "kitty", "alacritty", "wezterm", "ghostty", "console", "shell"]
+
+    private func updateInvertForBackground(at frame: NSRect) {
+        let app = NSWorkspace.shared.frontmostApplication
+        let bid = app?.bundleIdentifier ?? ""
+        let name = (app?.localizedName ?? "").lowercased()
+        let isTerminal = knownDarkAppIDs.contains(bid)
+            || darkAppNameKeywords.contains(where: { name.contains($0) })
+        let isDarkMode = NSAppearance.current.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let shouldInvert = isTerminal || isDarkMode
+        if window.badgeView.invertColors != shouldInvert {
+            window.badgeView.invertColors = shouldInvert
+        }
     }
 }
 
