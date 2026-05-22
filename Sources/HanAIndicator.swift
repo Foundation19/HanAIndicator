@@ -4,11 +4,12 @@ import CoreGraphics
 import Foundation
 import ImageIO
 import os
+import ServiceManagement
 import UniformTypeIdentifiers
 
 private let log = Logger(subsystem: "com.caticator", category: "app")
 
-private let appVersion = "0.3.1"
+private let appVersion = "0.3.2"
 private let defaultBadgeSize: CGFloat = 25
 private let badgeOuterPadding: CGFloat = 5
 private let badgeAspectRatio: CGFloat = 1.42
@@ -459,6 +460,7 @@ private final class SettingsWindowController: NSWindowController, NSTableViewDat
     private unowned let appDelegate: AppDelegate
     private let keepVisibleButton = NSButton(checkboxWithTitle: "Keep badge visible", target: nil, action: nil)
     private let preferCaretButton = NSButton(checkboxWithTitle: "Prefer text cursor position", target: nil, action: nil)
+    private let launchAtLoginButton = NSButton(checkboxWithTitle: "Launch at Login", target: nil, action: nil)
     private let axStatusLabel = NSTextField(labelWithString: "Checking...")
     private let sizeSlider = NSSlider(value: Double(defaultBadgeSize), minValue: 14, maxValue: 72, target: nil, action: nil)
     private let sizeValueLabel = NSTextField(string: "\(Int(defaultBadgeSize))")
@@ -590,21 +592,28 @@ private final class SettingsWindowController: NSWindowController, NSTableViewDat
             width: 420
         ))
 
+        // Launch at Login
+        launchAtLoginButton.frame = NSRect(x: 26, y: 82, width: 200, height: 20)
+        launchAtLoginButton.state = (SMAppService.mainApp.status == .enabled) ? .on : .off
+        launchAtLoginButton.target = self
+        launchAtLoginButton.action = #selector(toggleLaunchAtLogin)
+        view.addSubview(launchAtLoginButton)
+
         // AX 권한 상태 표시
-        axStatusLabel.frame = NSRect(x: 26, y: 80, width: 460, height: 20)
+        axStatusLabel.frame = NSRect(x: 26, y: 57, width: 460, height: 20)
         axStatusLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
         view.addSubview(axStatusLabel)
 
         let diagButton = NSButton(title: "🔍 Diagnose Caret", target: self, action: #selector(diagnoseAX))
-        diagButton.frame = NSRect(x: 26, y: 46, width: 160, height: 28)
+        diagButton.frame = NSRect(x: 26, y: 22, width: 160, height: 28)
         view.addSubview(diagButton)
 
         let reqButton = NSButton(title: "Request Permission", target: self, action: #selector(requestAXPermission))
-        reqButton.frame = NSRect(x: 196, y: 46, width: 160, height: 28)
+        reqButton.frame = NSRect(x: 196, y: 22, width: 160, height: 28)
         view.addSubview(reqButton)
 
         let accessButton = NSButton(title: "Open AX Settings", target: self, action: #selector(openAccessibilitySettings))
-        accessButton.frame = NSRect(x: 366, y: 46, width: 130, height: 28)
+        accessButton.frame = NSRect(x: 366, y: 22, width: 130, height: 28)
         view.addSubview(accessButton)
 
         return view
@@ -891,6 +900,20 @@ private final class SettingsWindowController: NSWindowController, NSTableViewDat
 
     @objc private func togglePreferCaret() {
         appDelegate.setPreferCaret(preferCaretButton.state == .on)
+    }
+
+    @objc private func toggleLaunchAtLogin() {
+        let enable = launchAtLoginButton.state == .on
+        do {
+            if enable { try SMAppService.mainApp.register() }
+            else { try SMAppService.mainApp.unregister() }
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Launch at Login"
+            alert.informativeText = "Could not change setting.\nMake sure Caticator.app is in /Applications."
+            alert.runModal()
+            launchAtLoginButton.state = enable ? .off : .on
+        }
     }
 
     @objc private func sizeChanged() {

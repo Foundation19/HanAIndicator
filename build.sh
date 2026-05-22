@@ -11,6 +11,7 @@ swiftc "$ROOT/Sources/HanAIndicator.swift" \
   -framework AppKit \
   -framework Carbon \
   -framework ApplicationServices \
+  -framework ServiceManagement \
   -o "$BIN"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
@@ -30,7 +31,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.3.1</string>
+  <string>0.3.2</string>
   <key>CFBundleVersion</key>
   <string>1</string>
   <key>LSMinimumSystemVersion</key>
