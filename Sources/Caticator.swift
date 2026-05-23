@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 
 private let log = Logger(subsystem: "com.caticator", category: "app")
 
-private let appVersion = "0.3.2"
+private let appVersion = "0.3.4"
 private let defaultBadgeSize: CGFloat = 25
 private let badgeOuterPadding: CGFloat = 5
 private let badgeAspectRatio: CGFloat = 1.42
@@ -1166,6 +1166,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mouseMonitor: Any?
     private var localMouseMonitor: Any?
     private var keyMonitor: Any?
+    private var clickMonitor: Any?
     private var hideAt = Date.distantFuture
     fileprivate var keepVisible = true
     fileprivate var preferCaret = true
@@ -1198,6 +1199,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastCaretPoint: CGPoint?
     private var lastCaretCheck = Date.distantPast
     private var lastBadgeSource = ""
+    private var lastFrontmostBID = ""
+    private var lastClickPoint: CGPoint?
+    private var lastClickBID = ""
     private var caretLostSince: Date? = nil    // AX 위치 소실 시작 시각 (유예용)
     private var lastMouseActivity = Date()
     private var lastTypingActivity = Date()
@@ -1451,6 +1455,14 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.fastMouseUpdate()
             return event
         }
+        // 클릭 위치 추적 — 터미널 등 AX 캐럿 미지원 앱의 커서 근사 위치로 사용
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self, !self.cachedIsKorean else { return }
+                self.lastClickPoint = NSEvent.mouseLocation
+                self.lastClickBID = (NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "").lowercased()
+            }
+        }
         // preferCaret 모드 딤 기준: 타이핑 여부 감지
         keyMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown]) { [weak self] _ in
             DispatchQueue.main.async { self?.markTypingActive() }
@@ -1548,7 +1560,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshInputSourceIfNeeded(force: false)
         updateIdleOpacity()
 
-        if blackCatMode && !cachedIsKorean {
+        if blackCatMode && !cachedIsKorean && !keepVisible {
             window.orderOut(nil)
             return
         }
@@ -1558,24 +1570,53 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             let bid = (app.bundleIdentifier ?? "").lowercased()
             let name = (app.localizedName ?? "").lowercased()
             if !allowedApps.contains(where: { bid == $0.lowercased() || name == $0.lowercased() }) {
+                lastFrontmostBID = ""
                 lastCaretPoint = nil
                 caretLostSince = nil
                 window.orderOut(nil)
                 return
             }
+            // 허용 앱으로 전환된 순간 hideAt 갱신 — Settings에서 앱 추가 후 즉시 반영
+            if bid != lastFrontmostBID {
+                lastFrontmostBID = bid
+                hideAt = Date().addingTimeInterval(1.8)
+            }
         }
 
         // preferCaret 모드: 캐럿 감지 시 hideAt와 무관하게 항상 표시
         if preferCaret {
-            if let p = throttledCaretPoint() {
+            let frontBID = (NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "")
+            let frontName = (NSWorkspace.shared.frontmostApplication?.localizedName ?? "").lowercased()
+            let isTerminal = knownDarkAppIDs.contains(frontBID)
+                || darkAppNameKeywords.contains(where: { frontName.contains($0) })
+
+            // 터미널은 AX elementRect fallback이 엉뚱한 위치를 반환하므로 건너뜀
+            if !isTerminal, let p = throttledCaretPoint() {
                 moveBadge(near: p)
                 if !window.isVisible { window.orderFrontRegardless() }
                 return
-            } else if !keepVisible {
+            }
+            // 터미널이거나 캐럿 감지 실패 → 윈도우 근사 위치 (터미널은 click 위치 미사용)
+            guard keepVisible || Date() < hideAt else {
                 window.orderOut(nil)
                 return
             }
-            // keepVisible ON → 아래 hideAt 체크 + 마우스 추적으로 계속
+            let currentBID = frontBID.lowercased()
+            if isTerminal {
+                if let p = windowBasedCaretPoint() {
+                    moveBadge(near: p)
+                } else {
+                    moveBadge(near: mousePoint())
+                }
+            } else if let p = lastClickPoint, lastClickBID == currentBID, isOnScreen(p) {
+                moveBadge(near: p)
+            } else if let p = windowBasedCaretPoint() {
+                moveBadge(near: p)
+            } else {
+                moveBadge(near: mousePoint())
+            }
+            if !window.isVisible { window.orderFrontRegardless() }
+            return
         }
 
         guard keepVisible || Date() < hideAt else {
@@ -1629,7 +1670,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private func fastMouseUpdate() {
         markMouseActive()
         guard !preferCaret else { return }
-        guard !(blackCatMode && !cachedIsKorean) else { return }
+        guard !(blackCatMode && !cachedIsKorean) || keepVisible else { return }
         guard keepVisible || Date() < hideAt else { return }
         moveBadge(near: mousePoint())
         if !window.isVisible {
@@ -1651,6 +1692,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func markTypingActive() {
         lastTypingActivity = Date()
+        // 한글 타이핑 중엔 hideAt을 계속 연장 → 배지가 타이핑하는 동안 유지됨
+        if cachedIsKorean { hideAt = Date().addingTimeInterval(2.0) }
         guard preferCaret else { return }
         guard isDimmed || window.alphaValue < activeBadgeOpacity else { return }
         isDimmed = false
@@ -1824,6 +1867,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
         if let localMouseMonitor { NSEvent.removeMonitor(localMouseMonitor) }
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         NSApp.terminate(nil)
     }
 
@@ -1871,6 +1915,29 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private func mousePoint() -> CGPoint {
         let location = NSEvent.mouseLocation
         return location
+    }
+
+    // 캐럿 AX 미지원 앱(터미널 등)에서 포커스 윈도우 하단 중앙을 근사 위치로 반환
+    private func windowBasedCaretPoint() -> CGPoint? {
+        guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
+        let appEl = AXUIElementCreateApplication(app.processIdentifier)
+        var winRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appEl, kAXFocusedWindowAttribute as CFString, &winRef) == .success,
+              let winEl = winRef as! AXUIElement? else { return nil }
+        var posRef: CFTypeRef?
+        var szRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(winEl, kAXPositionAttribute as CFString, &posRef) == .success,
+              AXUIElementCopyAttributeValue(winEl, kAXSizeAttribute as CFString, &szRef) == .success,
+              let pv = posRef as! AXValue?, let sv = szRef as! AXValue? else { return nil }
+        var pos = CGPoint.zero; var sz = CGSize.zero
+        AXValueGetValue(pv, .cgPoint, &pos)
+        AXValueGetValue(sv, .cgSize, &sz)
+        // AX 좌표는 top-left 기준 → AppKit bottom-left 기준으로 변환
+        let screenH = NSScreen.screens.first?.frame.height ?? 900
+        let appKitBottom = screenH - pos.y - sz.height
+        // anchor=bottomLeft, offsetY=-10, windowH=40 → origin.y = point.y - 50
+        // 커서 라인(appKitBottom+20) 위치에 배지가 오려면 point.y = appKitBottom+70 필요
+        return CGPoint(x: pos.x + 20, y: appKitBottom + 70)
     }
 
     private func isOnScreen(_ p: CGPoint) -> Bool {
@@ -2033,7 +2100,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         return nil
     }
 
-    private func bestTextElement(from element: AXUIElement) -> AXUIElement? {
+    private func bestTextElement(from element: AXUIElement, _depth: Int = 0) -> AXUIElement? {
+        guard _depth < 8 else { return nil }
         if selectedTextRect(element) != nil {
             return element
         }
@@ -2041,7 +2109,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             return element
         }
         if let focusedChild = axElement(element, kAXFocusedUIElementAttribute),
-           let match = bestTextElement(from: focusedChild) {
+           let match = bestTextElement(from: focusedChild, _depth: _depth + 1) {
             return match
         }
         if let childMatch = firstTextElementInChildren(of: element, depth: 0) {
@@ -2261,8 +2329,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         let name = (app?.localizedName ?? "").lowercased()
         let isTerminal = knownDarkAppIDs.contains(bid)
             || darkAppNameKeywords.contains(where: { name.contains($0) })
-        let isDarkMode = NSAppearance.current.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let shouldInvert = isTerminal || isDarkMode
+        let isDarkMode = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let shouldInvert = invertColors || isTerminal || isDarkMode
         if window.badgeView.invertColors != shouldInvert {
             window.badgeView.invertColors = shouldInvert
         }
